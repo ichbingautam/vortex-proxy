@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "vortex-core",
+    "vortex-proxy",
+    "vortex-filters",
+    "vortex-admin",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Shubham Gautam <gautamshubham658@gmail.com>"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[workspace.lints.rust]
+missing_docs = "deny"

@@ -1,0 +1,18 @@
+[package]
+name = "vortex-proxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Async processing engine for Vortex"
+
+[dependencies]
+vortex-core = { path = "../vortex-core" }
+vortex-filters = { path = "../vortex-filters" }
+vortex-admin = { path = "../vortex-admin" }
+tokio = { version = "1.0", features = ["full"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "vortex-filters"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Wasmtime execution engine for Vortex plugins"
+
+[dependencies]
+vortex-core = { path = "../vortex-core" }
+
+[lints]
+workspace = true

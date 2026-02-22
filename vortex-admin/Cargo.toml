@@ -1,0 +1,12 @@
+[package]
+name = "vortex-admin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Control plane Unix socket API for Vortex"
+
+[dependencies]
+vortex-core = { path = "../vortex-core" }
+
+[lints]
+workspace = true

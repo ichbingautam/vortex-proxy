@@ -1,0 +1,11 @@
+[package]
+name = "vortex-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Core domain logic and routing models for Vortex"
+
+[dependencies]
+
+[lints]
+workspace = true
