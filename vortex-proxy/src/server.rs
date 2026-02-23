@@ -2,13 +2,15 @@
 
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
-use hyper::body::Bytes;
-use http_body_util::Full;
+use hyper::{Request, Response};
+use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use tokio_rustls::TlsAcceptor;
 use std::net::SocketAddr;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
+
+// A generic boxed error type
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Starts the proxy server on the given address.
 pub async fn start_server(
@@ -28,7 +30,7 @@ pub async fn start_server(
                     Ok(tls_stream) => {
                         let io = TokioIo::new(tls_stream);
                         if let Err(err) = http1::Builder::new()
-                            .serve_connection(io, service_fn(handle_request))
+                            .serve_connection(io, service_fn(forward_request))
                             .await
                         {
                             eprintln!("Error serving connection: {:?}", err);
@@ -42,7 +44,7 @@ pub async fn start_server(
             let io = TokioIo::new(stream);
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(handle_request))
+                    .serve_connection(io, service_fn(forward_request))
                     .await
                 {
                     eprintln!("Error serving connection: {:?}", err);
@@ -52,18 +54,50 @@ pub async fn start_server(
     }
 }
 
-/// Handles incoming HTTP requests and forwards them.
-async fn handle_request(
-    req: Request<hyper::body::Incoming>,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
-    println!("Received request: {} {}", req.method(), req.uri());
+/// Handles incoming HTTP requests and proxies them to a static backend.
+async fn forward_request(
+    mut req: Request<Incoming>,
+) -> Result<Response<Incoming>, BoxError> {
+    println!("Proxying request: {} {}", req.method(), req.uri());
 
-    // For now, return a static response as the foundation.
-    // Zero-copy body handling will use the Incoming body directly in the forwarder logic.
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .body(Full::new(Bytes::from("Vortex Proxy: Traffic received and parsed.")))
-        .unwrap();
+    // 1. Define static upstream backend (Mocking backend ID lookup)
+    let upstream_addr = "127.0.0.1:9090";
 
-    Ok(response)
+    // 2. Establish connection to upstream
+    // Note: A production Staff-level load balancer would use a connection pool (Lock-Free Hot Pool) here.
+    // For Phase 1, we implement the direct zero-copy byte-pump using hyper::client::conn.
+    let stream = match TcpStream::connect(upstream_addr).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to connect to backend: {}", e);
+            return Err(Box::new(e));
+        }
+    };
+
+    let io = TokioIo::new(stream);
+
+    // 3. Perform the HTTP/1.1 handshake with the upstream server
+    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
+        Ok(handshake) => handshake,
+        Err(e) => {
+            eprintln!("Failed HTTP handshake with backend: {}", e);
+            return Err(Box::new(e));
+        }
+    };
+
+    // 4. Spawn a task to drive the connection
+    tokio::task::spawn(async move {
+        if let Err(err) = conn.await {
+            eprintln!("Connection failed: {:?}", err);
+        }
+    });
+
+    // 5. Forward the original request directly with zero-copy stream
+    let uri_string = format!("http://{}{}", upstream_addr, req.uri().path_and_query().map(|x| x.as_str()).unwrap_or("/"));
+    *req.uri_mut() = uri_string.parse().unwrap();
+    req.headers_mut().insert(hyper::header::HOST, upstream_addr.parse().unwrap());
+
+    let res = sender.send_request(req).await?;
+
+    Ok(res)
 }
