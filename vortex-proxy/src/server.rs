@@ -6,28 +6,49 @@ use hyper::{Request, Response, StatusCode};
 use hyper::body::Bytes;
 use http_body_util::Full;
 use hyper_util::rt::TokioIo;
+use tokio_rustls::TlsAcceptor;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 /// Starts the proxy server on the given address.
-pub async fn start_server(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_server(
+    addr: SocketAddr,
+    tls_acceptor: Option<TlsAcceptor>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
-    println!("Listening on http://{}", addr);
+    println!("Listening on {}", addr);
 
     loop {
         let (stream, _) = listener.accept().await?;
 
-        // Wrap the standard TCP stream with TokioIo for hyper
-        let io = TokioIo::new(stream);
-
-        tokio::task::spawn(async move {
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(io, service_fn(handle_request))
-                .await
-            {
-                eprintln!("Error serving connection: {:?}", err);
-            }
-        });
+        if let Some(acceptor) = &tls_acceptor {
+            let acceptor = acceptor.clone();
+            tokio::task::spawn(async move {
+                match acceptor.accept(stream).await {
+                    Ok(tls_stream) => {
+                        let io = TokioIo::new(tls_stream);
+                        if let Err(err) = http1::Builder::new()
+                            .serve_connection(io, service_fn(handle_request))
+                            .await
+                        {
+                            eprintln!("Error serving connection: {:?}", err);
+                        }
+                    }
+                    Err(e) => eprintln!("TLS Handshake failed: {}", e),
+                }
+            });
+        } else {
+            // Unencrypted fallback
+            let io = TokioIo::new(stream);
+            tokio::task::spawn(async move {
+                if let Err(err) = http1::Builder::new()
+                    .serve_connection(io, service_fn(handle_request))
+                    .await
+                {
+                    eprintln!("Error serving connection: {:?}", err);
+                }
+            });
+        }
     }
 }
 

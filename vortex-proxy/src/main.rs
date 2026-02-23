@@ -9,6 +9,8 @@ use vortex_filters;
 use vortex_admin;
 
 mod server;
+mod tls;
+use tokio_rustls::TlsAcceptor;
 
 /// The primary entrypoint for the Vortex reverse proxy.
 ///
@@ -25,10 +27,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Tokio asynchronous runtime initialized successfully.");
 
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
+    // Load TLS configuration
+    let tls_config = tls::load_tls_config("certs/cert.pem", "certs/key.pem")
+        .expect("Failed to load TLS configuration");
+    let tls_acceptor = TlsAcceptor::from(tls_config);
 
-    // Start the server (this will block until failure or shutdown)
-    if let Err(e) = server::start_server(addr).await {
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8443));
+
+    // Start the server with the TLS Acceptor
+    if let Err(e) = server::start_server(addr, Some(tls_acceptor)).await {
         eprintln!("Server failed: {}", e);
     }
 
