@@ -18,5 +18,9 @@ tokio-rustls = "0.26"
 rustls-pemfile = "2.2"
 pki-types = { package = "rustls-pki-types", version = "1.10" }
 
+[dev-dependencies]
+reqwest = "0.12"
+tokio = { version = "1.0", features = ["rt", "macros", "test-util"] }
+
 [lints]
 workspace = true
