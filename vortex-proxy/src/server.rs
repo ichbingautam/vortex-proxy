@@ -7,9 +7,8 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use tokio_rustls::TlsAcceptor;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use vortex_core::domain::backend::SharedBackend;
+use vortex_core::domain::routing::SharedRoutingTable;
 
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -18,14 +17,14 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub async fn start_server(
     addr: SocketAddr,
     tls_acceptor: Option<TlsAcceptor>,
-    backends: Arc<Vec<SharedBackend>>,
+    routing_table: SharedRoutingTable,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on {}", addr);
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let backends_clone = backends.clone();
+        let routing_table = routing_table.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
@@ -33,9 +32,9 @@ pub async fn start_server(
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
                         let io = TokioIo::new(tls_stream);
-                        let backends_request = backends_clone.clone();
+                        let routers_request = routing_table.clone();
                         if let Err(err) = http1::Builder::new()
-                            .serve_connection(io, service_fn(move |req| forward_request(req, backends_request.clone())))
+                            .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone())))
                             .await
                         {
                             eprintln!("Error serving connection: {:?}", err);
@@ -47,10 +46,10 @@ pub async fn start_server(
         } else {
             // Unencrypted fallback
             let io = TokioIo::new(stream);
-            let backends_request = backends_clone.clone();
+            let routers_request = routing_table.clone();
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(move |req| forward_request(req, backends_request.clone())))
+                    .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone())))
                     .await
                 {
                     eprintln!("Error serving connection: {:?}", err);
@@ -63,12 +62,12 @@ pub async fn start_server(
 /// Handles incoming HTTP requests and proxies them to a healthy backend.
 async fn forward_request(
     mut req: Request<Incoming>,
-    backends: Arc<Vec<SharedBackend>>,
+    routing_table: SharedRoutingTable,
 ) -> Result<Response<Incoming>, BoxError> {
     println!("Proxying request: {} {}", req.method(), req.uri());
 
-    // 1. Find a healthy backend (Simple Round Robin / First Available for now)
-    let upstream_backend = backends.iter().find(|b| b.is_healthy());
+    // 1. Find a healthy backend via the lock-free routing table
+    let upstream_backend = routing_table.get_healthy_backend();
 
     let upstream_addr = match upstream_backend {
         Some(backend) => backend.addr,

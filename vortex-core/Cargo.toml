@@ -6,6 +6,7 @@ authors.workspace = true
 description = "Core domain logic and routing models for Vortex"
 
 [dependencies]
+arc-swap = "1.6"
 
 [lints]
 workspace = true
