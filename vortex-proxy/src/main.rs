@@ -11,11 +11,13 @@ use vortex_admin;
 mod server;
 mod tls;
 mod health_check;
+mod connection_pool;
 
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
 use vortex_core::domain::backend::{Backend, BackendId};
 use vortex_core::domain::routing::RoutingTable;
+use crate::connection_pool::pool::ConnectionPool;
 
 /// The primary entrypoint for the Vortex reverse proxy.
 ///
@@ -47,10 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start background health-checker probing every 5 seconds
     health_check::prober::spawn_health_checker(routing_table.clone(), 5000);
 
+    let connection_pool = ConnectionPool::new();
+
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8443));
 
-    // Start the server with the TLS Acceptor and the routing table
-    if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table).await {
+    // Start the server with the TLS Acceptor, routing table, and hot pool
+    if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table, connection_pool).await {
         eprintln!("Server failed: {}", e);
     }
 

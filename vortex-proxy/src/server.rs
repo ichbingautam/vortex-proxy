@@ -9,6 +9,7 @@ use tokio_rustls::TlsAcceptor;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use vortex_core::domain::routing::SharedRoutingTable;
+use crate::connection_pool::pool::ConnectionPool;
 
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -18,6 +19,7 @@ pub async fn start_server(
     addr: SocketAddr,
     tls_acceptor: Option<TlsAcceptor>,
     routing_table: SharedRoutingTable,
+    connection_pool: ConnectionPool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on {}", addr);
@@ -25,6 +27,7 @@ pub async fn start_server(
     loop {
         let (stream, _) = listener.accept().await?;
         let routing_table = routing_table.clone();
+        let connection_pool = connection_pool.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
@@ -33,8 +36,9 @@ pub async fn start_server(
                     Ok(tls_stream) => {
                         let io = TokioIo::new(tls_stream);
                         let routers_request = routing_table.clone();
+                        let pool_request = connection_pool.clone();
                         if let Err(err) = http1::Builder::new()
-                            .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone())))
+                            .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone(), pool_request.clone())))
                             .await
                         {
                             eprintln!("Error serving connection: {:?}", err);
@@ -47,9 +51,10 @@ pub async fn start_server(
             // Unencrypted fallback
             let io = TokioIo::new(stream);
             let routers_request = routing_table.clone();
+            let pool_request = connection_pool.clone();
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone())))
+                    .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone(), pool_request.clone())))
                     .await
                 {
                     eprintln!("Error serving connection: {:?}", err);
@@ -63,6 +68,7 @@ pub async fn start_server(
 async fn forward_request(
     mut req: Request<Incoming>,
     routing_table: SharedRoutingTable,
+    connection_pool: ConnectionPool,
 ) -> Result<Response<Incoming>, BoxError> {
     println!("Proxying request: {} {}", req.method(), req.uri());
 
@@ -77,41 +83,61 @@ async fn forward_request(
         }
     };
 
-    // 2. Establish connection to upstream
-    // Note: A production Staff-level load balancer would use a connection pool (Lock-Free Hot Pool) here.
-    // For Phase 1, we implement the direct zero-copy byte-pump using hyper::client::conn.
-    let stream = match TcpStream::connect(upstream_addr).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to connect to backend: {}", e);
-            return Err(Box::new(e));
+    // 2. Try popping an existing, warm connection sender from our Hot Pool
+    let mut sender_opt = None;
+    if let Some(mut s) = connection_pool.try_pop(&upstream_addr) {
+        if s.ready().await.is_ok() {
+            sender_opt = Some(s);
+        }
+    }
+
+    // 3. Either reuse the hot connection, or establish a new TCP stream to the backend
+    let mut sender = match sender_opt {
+        Some(s) => s,
+        None => {
+            let stream = match TcpStream::connect(upstream_addr).await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Failed to connect to backend: {}", e);
+                    return Err(Box::new(e));
+                }
+            };
+
+            let io = TokioIo::new(stream);
+
+            // Perform the HTTP/1.1 handshake with the upstream server
+            let (s, conn) = match hyper::client::conn::http1::handshake(io).await {
+                Ok(handshake) => handshake,
+                Err(e) => {
+                    eprintln!("Failed HTTP handshake with backend: {}", e);
+                    return Err(Box::new(e));
+                }
+            };
+
+            // Spawn a task to drive the connection
+            tokio::task::spawn(async move {
+                if let Err(err) = conn.await {
+                    eprintln!("Connection failed: {:?}", err);
+                }
+            });
+
+            s
         }
     };
 
-    let io = TokioIo::new(stream);
-
-    // 3. Perform the HTTP/1.1 handshake with the upstream server
-    let (mut sender, conn) = match hyper::client::conn::http1::handshake(io).await {
-        Ok(handshake) => handshake,
-        Err(e) => {
-            eprintln!("Failed HTTP handshake with backend: {}", e);
-            return Err(Box::new(e));
-        }
-    };
-
-    // 4. Spawn a task to drive the connection
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            eprintln!("Connection failed: {:?}", err);
-        }
-    });
-
-    // 5. Forward the original request directly with zero-copy stream
+    // 4. Forward the original request directly with zero-copy stream
     let uri_string = format!("http://{}{}", upstream_addr, req.uri().path_and_query().map(|x| x.as_str()).unwrap_or("/"));
     *req.uri_mut() = uri_string.parse().unwrap();
     req.headers_mut().insert(hyper::header::HOST, upstream_addr.to_string().parse().unwrap());
 
+    if sender.ready().await.is_err() {
+        return Err(Box::from("Failed to prepare connection sender"));
+    }
+
     let res = sender.send_request(req).await?;
+
+    // Return the sender cleanly to the Lock-Free pool for reuse by another request
+    connection_pool.push(upstream_addr, sender);
 
     Ok(res)
 }
