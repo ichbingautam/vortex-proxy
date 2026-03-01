@@ -10,6 +10,8 @@ use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use vortex_core::domain::routing::SharedRoutingTable;
 use crate::connection_pool::pool::ConnectionPool;
+use vortex_core::load_balancer::selector::select_best_backend;
+use std::time::Instant;
 
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -72,16 +74,23 @@ async fn forward_request(
 ) -> Result<Response<Incoming>, BoxError> {
     println!("Proxying request: {} {}", req.method(), req.uri());
 
-    // 1. Find a healthy backend via the lock-free routing table
-    let upstream_backend = routing_table.get_healthy_backend();
+    // 1. Find the computationally optimal backend using Peak EWMA
+    let upstream_backend = select_best_backend(&routing_table);
 
-    let upstream_addr = match upstream_backend {
-        Some(backend) => backend.addr,
+    let (upstream_addr, ewma_node) = match upstream_backend {
+        Some(backend) => (backend.addr, backend.clone()),
         None => {
             eprintln!("No healthy backends available!");
             return Err(Box::from("No healthy backends available"));
         }
     };
+
+    // Increment active request gauge for this specific node
+    // This guard automatically decrements when it falls out of scope (after proxying finishes)
+    let _active_guard = ewma_node.ewma.increment_active();
+
+    // Start RTT timer
+    let start_time = Instant::now();
 
     // 2. Try popping an existing, warm connection sender from our Hot Pool
     let mut sender_opt = None;
@@ -138,6 +147,10 @@ async fn forward_request(
 
     // Return the sender cleanly to the Lock-Free pool for reuse by another request
     connection_pool.push(upstream_addr, sender);
+
+    // Record the round-trip latency and feed it into the Peak EWMA algorithm lock-free
+    let rtt_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+    ewma_node.ewma.observe_latency(rtt_ms);
 
     Ok(res)
 }

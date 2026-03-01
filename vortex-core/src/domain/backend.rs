@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use crate::load_balancer::ewma::PeakEwma;
 
 /// A unique identifier for a backend server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -17,6 +18,8 @@ pub struct Backend {
     pub addr: SocketAddr,
     /// Whether the backend is currently considered healthy
     healthy: AtomicBool,
+    /// The Peak EWMA tracker for this specific backend
+    pub ewma: PeakEwma,
 }
 
 impl Backend {
@@ -26,6 +29,9 @@ impl Backend {
             id,
             addr,
             healthy: AtomicBool::new(true), // assume healthy initially
+
+            // Initialize EWMA with 50.0ms baseline and 0.5 balanced decay
+            ewma: PeakEwma::new(50.0, 0.5),
         }
     }
 
