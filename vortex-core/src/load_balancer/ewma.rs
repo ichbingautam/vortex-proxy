@@ -107,3 +107,81 @@ impl<'a> Drop for ActiveRequestGuard<'a> {
         self.ewma.active_requests.fetch_sub(1, Ordering::Relaxed);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn test_peak_ewma_instant_peak_tracking() {
+        let ewma = PeakEwma::new(50.0, 0.5);
+        
+        // A sudden latency spike to 500ms should instantly jump the EWMA to 500ms
+        ewma.observe_latency(500.0);
+        assert_eq!(ewma.get_ewma(), 500.0);
+    }
+
+    #[test]
+    fn test_peak_ewma_graceful_decay() {
+        let ewma = PeakEwma::new(100.0, 0.5); // Alpha 0.5 means 50% decay per observation
+        
+        // Let's say latency drops back to 50ms
+        ewma.observe_latency(50.0);
+        
+        // Math: (50.0 * (1.0 - 0.5)) + (100.0 * 0.5) 
+        // Math: (25.0) + (50.0) = 75.0
+        assert_eq!(ewma.get_ewma(), 75.0);
+
+        // Another 50ms drops it further
+        ewma.observe_latency(50.0);
+        // Math: (50.0 * 0.5) + (75.0 * 0.5) = 25.0 + 37.5 = 62.5
+        assert_eq!(ewma.get_ewma(), 62.5);
+    }
+
+    #[test]
+    fn test_active_request_guard() {
+        let ewma = PeakEwma::new(10.0, 0.5);
+        assert_eq!(ewma.active_requests.load(Ordering::Relaxed), 0);
+
+        {
+            let _guard = ewma.increment_active();
+            assert_eq!(ewma.active_requests.load(Ordering::Relaxed), 1);
+            
+            // Score should be (10 + 1) * (1 + 1) = 22
+            assert_eq!(ewma.calculate_score(), 22.0);
+        }
+
+        // Guard dropped, should be 0 again
+        assert_eq!(ewma.active_requests.load(Ordering::Relaxed), 0);
+        // Score should be (10 + 1) * (0 + 1) = 11
+        assert_eq!(ewma.calculate_score(), 11.0);
+    }
+
+    proptest! {
+        #[test]
+        fn prop_ewma_never_exceeds_bounds(
+            initial in 1.0f64..1000.0,
+            samples in prop::collection::vec(1.0f64..5000.0, 1..100),
+            alpha in 0.01f64..0.99
+        ) {
+            let ewma = PeakEwma::new(initial, alpha);
+            
+            let mut max_observed = initial;
+            
+            for sample in samples {
+                if sample > max_observed {
+                    max_observed = sample;
+                }
+                
+                ewma.observe_latency(sample);
+                let current = ewma.get_ewma();
+                
+                // The EWMA should never be lower than the lowest possible theoretical value
+                prop_assert!(current > 0.0);
+                // The EWMA should never exceed the highest spike it's ever seen
+                prop_assert!(current <= max_observed);
+            }
+        }
+    }
+}

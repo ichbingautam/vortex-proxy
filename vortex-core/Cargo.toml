@@ -8,5 +8,8 @@ description = "Core domain logic and routing models for Vortex"
 [dependencies]
 arc-swap = "1.6"
 
+[dev-dependencies]
+proptest = "1.4"
+
 [lints]
 workspace = true
