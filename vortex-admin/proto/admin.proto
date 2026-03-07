@@ -1,0 +1,22 @@
+syntax = "proto3";
+package vortex.admin;
+
+service AdminService {
+    rpc ReloadConfig (ReloadConfigRequest) returns (ReloadConfigResponse);
+    rpc GetStats (GetStatsRequest) returns (GetStatsResponse);
+}
+
+message ReloadConfigRequest {
+    string config_path = 1;
+}
+
+message ReloadConfigResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    uint32 active_connections = 1;
+}

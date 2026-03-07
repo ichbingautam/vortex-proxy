@@ -1,8 +1,9 @@
-//! Vortex Admin Control Plane
-//!
-//! Handles Unix socket connections and ProtoBuf deserialization for dynamic configuration.
+//! Control plane Unix socket API for Vortex.
 
-/// Initializes the Unix socket admin control plane.
-pub fn admin_init() {
-    println!("vortex-admin initialized");
+pub mod server;
+
+/// Protobuf generated code for Vortex admin API.
+#[allow(missing_docs)]
+pub mod proto {
+    tonic::include_proto!("vortex.admin");
 }
