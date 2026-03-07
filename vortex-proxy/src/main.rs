@@ -49,6 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start background health-checker probing every 5 seconds
     health_check::prober::spawn_health_checker(routing_table.clone(), 5000);
 
+    // Spawn the Control Plane API on a Unix Domain Socket
+    let admin_routing_table = routing_table.clone();
+    tokio::spawn(async move {
+        if let Err(e) = vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table).await {
+            eprintln!("Admin gRPC server failed: {}", e);
+        }
+    });
+
     let connection_pool = ConnectionPool::new();
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8443));

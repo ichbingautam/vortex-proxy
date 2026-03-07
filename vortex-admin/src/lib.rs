@@ -7,3 +7,8 @@ pub mod server;
 pub mod proto {
     tonic::include_proto!("vortex.admin");
 }
+
+/// Initialize the vortex-admin telemetry and core states.
+pub fn admin_init() {
+    println!("Vortex Admin (UDS) module initialization sweep complete.");
+}

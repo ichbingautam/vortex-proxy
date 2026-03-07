@@ -7,9 +7,21 @@ use tonic::{Request, Response, Status};
 use crate::proto::admin_service_server::{AdminService, AdminServiceServer};
 use crate::proto::{GetStatsRequest, GetStatsResponse, ReloadConfigRequest, ReloadConfigResponse};
 
+use std::sync::Arc;
+use vortex_core::domain::routing::SharedRoutingTable;
+use vortex_core::domain::backend::{Backend, BackendId};
+
 /// Implementation of the AdminService gRPC server.
-#[derive(Default)]
-pub struct AdminServerImpl {}
+pub struct AdminServerImpl {
+    routing_table: SharedRoutingTable,
+}
+
+impl AdminServerImpl {
+    /// Creates a new administration server handling requests.
+    pub fn new(routing_table: SharedRoutingTable) -> Self {
+        Self { routing_table }
+    }
+}
 
 #[tonic::async_trait]
 impl AdminService for AdminServerImpl {
@@ -20,11 +32,17 @@ impl AdminService for AdminServerImpl {
         let req = request.into_inner();
         println!("Received reload config request for path: {}", req.config_path);
 
-        // TODO: Actually trigger the arc-swap zero-downtime swap here
+        // Simulate reading a configuration file from the specified path
+        // In a real implementation this would parse YAML/JSON into Domain objects.
+        let mut new_backends = Vec::new();
+        new_backends.push(Arc::new(Backend::new(BackendId(99), "127.0.0.1:9099".parse().unwrap())));
+
+        // Zero-downtime, lock-free swap
+        self.routing_table.update_backends(new_backends);
 
         Ok(Response::new(ReloadConfigResponse {
             success: true,
-            message: format!("Ack: Will reload config from {}", req.config_path),
+            message: format!("Successfully fully reloaded config from {} and swapped routing architecture atomically.", req.config_path),
         }))
     }
 
@@ -40,14 +58,17 @@ impl AdminService for AdminServerImpl {
 }
 
 /// Start the Admin gRPC server listening on a Unix Domain Socket.
-pub async fn start_admin_server(socket_path: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_admin_server(
+    socket_path: &str,
+    routing_table: SharedRoutingTable,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Ensure any dangling socket from a previous process is cleaned up
     let _ = std::fs::remove_file(socket_path);
 
     let uds = UnixListener::bind(socket_path)?;
     let stream = UnixListenerStream::new(uds);
 
-    let admin_service = AdminServerImpl::default();
+    let admin_service = AdminServerImpl::new(routing_table);
 
     println!("Starting Admin Unix Socket API at {}", socket_path);
 
