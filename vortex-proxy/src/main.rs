@@ -18,6 +18,7 @@ use std::sync::Arc;
 use vortex_core::domain::backend::{Backend, BackendId};
 use vortex_core::domain::routing::RoutingTable;
 use crate::connection_pool::pool::ConnectionPool;
+use vortex_filters::wasm_engine::WasmEngine;
 
 /// The primary entrypoint for the Vortex reverse proxy.
 ///
@@ -58,11 +59,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let connection_pool = ConnectionPool::new();
+    let wasm_engine = Arc::new(WasmEngine::new());
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8443));
 
-    // Start the server with the TLS Acceptor, routing table, and hot pool
-    if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table, connection_pool).await {
+    // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
+    if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table, connection_pool, wasm_engine).await {
         eprintln!("Server failed: {}", e);
     }
 
