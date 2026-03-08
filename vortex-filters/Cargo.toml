@@ -8,6 +8,9 @@ description = "Wasmtime execution engine for Vortex plugins"
 [dependencies]
 vortex-core = { path = "../vortex-core" }
 wasmtime = "20.0"
+redis = { version = "0.25", features = ["tokio-comp"] }
+deadpool-redis = "0.15"
+async-trait = "0.1"
 
 [lints]
 workspace = true

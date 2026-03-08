@@ -7,6 +7,7 @@ description = "Core domain logic and routing models for Vortex"
 
 [dependencies]
 arc-swap = "1.6"
+async-trait = "0.1"
 
 [dev-dependencies]
 proptest = "1.4"

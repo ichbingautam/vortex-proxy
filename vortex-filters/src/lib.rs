@@ -4,6 +4,9 @@
 
 pub mod wasm_engine;
 
+/// Distributed rate limiting evaluators and redis storage drivers.
+pub mod rate_limiter;
+
 /// Initializes the WebAssembly filters runtime.
 pub fn filters_init() {
     println!("vortex-filters initialized");
