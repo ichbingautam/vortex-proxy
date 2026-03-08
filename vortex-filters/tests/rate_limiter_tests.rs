@@ -1,3 +1,5 @@
+//! Integration tests for the Distributed GCRA Rate Limiter.
+
 use std::time::Duration;
 use vortex_filters::rate_limiter::redis_store::RedisStore;
 use vortex_core::domain::rate_limit::RateStore;
