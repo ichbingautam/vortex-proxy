@@ -2659,6 +2659,7 @@ dependencies = [
  "async-trait",
  "deadpool-redis",
  "redis",
+ "tokio",
  "vortex-core",
  "wasmtime",
 ]
