@@ -28,6 +28,10 @@ opentelemetry = { version = "0.21", features = ["trace"] }
 opentelemetry_sdk = { version = "0.21", features = ["tokio", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.14", features = ["trace", "grpc-tonic", "tokio"] }
 
+# Metrics
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+
 [dev-dependencies]
 reqwest = "0.12"
 tokio = { version = "1.0", features = ["rt", "macros", "test-util"] }

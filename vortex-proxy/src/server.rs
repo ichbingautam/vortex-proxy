@@ -14,10 +14,11 @@ use vortex_core::load_balancer::selector::select_best_backend;
 use vortex_filters::wasm_engine::WasmEngine;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{info, error, warn, debug, Instrument, Span};
+use tracing::{info, error, debug, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
+use metrics::{counter, histogram};
 
 struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
 
@@ -211,6 +212,8 @@ async fn forward_request(
         return Err(Box::from("Failed to prepare connection sender"));
     }
 
+    let req_method = req.method().to_string();
+
     let res = sender.send_request(req).await?;
 
     // Return the sender cleanly to the Lock-Free pool for reuse by another request
@@ -218,7 +221,17 @@ async fn forward_request(
 
     // Record the round-trip latency and feed it into the Peak EWMA algorithm lock-free
     let rtt_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+    let rtt_s = start_time.elapsed().as_secs_f64();
+
     ewma_node.ewma.observe_latency(rtt_ms);
+
+    // Record high-resolution metrics
+    counter!("vortex_requests_total", "method" => req_method).increment(1);
+    histogram!("vortex_request_duration_seconds").record(rtt_s);
+
+    if res.status().is_server_error() {
+        counter!("vortex_requests_errors_total").increment(1);
+    }
 
     Ok(res)
 }

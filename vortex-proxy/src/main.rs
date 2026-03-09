@@ -13,6 +13,7 @@ mod tls;
 mod health_check;
 mod connection_pool;
 pub mod telemetry;
+pub mod metrics_ext;
 
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
@@ -29,6 +30,9 @@ use vortex_filters::wasm_engine::WasmEngine;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize non-blocking OpenTelemetry tracing
     telemetry::init_telemetry().unwrap();
+
+    // Initialize Prometheus metrics exporter on port 9091
+    metrics_ext::init_metrics_exporter(9091).unwrap();
 
     println!("Starting Vortex Proxy Engine...");
 
