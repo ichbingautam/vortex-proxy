@@ -12,6 +12,7 @@ mod server;
 mod tls;
 mod health_check;
 mod connection_pool;
+pub mod telemetry;
 
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
@@ -26,6 +27,9 @@ use vortex_filters::wasm_engine::WasmEngine;
 /// and begins listening for incoming TCP connections.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize non-blocking OpenTelemetry tracing
+    telemetry::init_telemetry().unwrap();
+
     println!("Starting Vortex Proxy Engine...");
 
     // Initialize core structural components

@@ -14,6 +14,23 @@ use vortex_core::load_balancer::selector::select_best_backend;
 use vortex_filters::wasm_engine::WasmEngine;
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::{info, error, warn, debug, Instrument, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use opentelemetry::global;
+use opentelemetry::propagation::Extractor;
+
+struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
+
+impl<'a> Extractor for HeaderExtractor<'a> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|v| v.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|k| k.as_str()).collect()
+    }
+}
+
 
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -27,7 +44,7 @@ pub async fn start_server(
     wasm_engine: Arc<WasmEngine>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
-    println!("Listening on {}", addr);
+    info!("Listening on {}", addr);
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -45,13 +62,28 @@ pub async fn start_server(
                         let pool_request = connection_pool.clone();
                         let wasm_request = wasm_engine.clone();
                         if let Err(err) = http1::Builder::new()
-                            .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())))
+                            .serve_connection(io, service_fn(move |req| {
+                                // Extract W3C Context at the edge
+                                let parent_cx = global::get_text_map_propagator(|prop| {
+                                    prop.extract(&HeaderExtractor(req.headers()))
+                                });
+
+                                let span = tracing::info_span!(
+                                    "proxy_request",
+                                    method = %req.method(),
+                                    uri = %req.uri(),
+                                );
+                                span.set_parent(parent_cx);
+
+                                forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())
+                                    .instrument(span)
+                            }))
                             .await
                         {
-                            eprintln!("Error serving connection: {:?}", err);
+                            error!("Error serving connection: {:?}", err);
                         }
                     }
-                    Err(e) => eprintln!("TLS Handshake failed: {}", e),
+                    Err(e) => error!("TLS Handshake failed: {}", e),
                 }
             });
         } else {
@@ -62,10 +94,24 @@ pub async fn start_server(
             let wasm_request = wasm_engine.clone();
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(move |req| forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())))
+                    .serve_connection(io, service_fn(move |req| {
+                        let parent_cx = global::get_text_map_propagator(|prop| {
+                            prop.extract(&HeaderExtractor(req.headers()))
+                        });
+
+                        let span = tracing::info_span!(
+                            "proxy_request",
+                            method = %req.method(),
+                            uri = %req.uri(),
+                        );
+                        span.set_parent(parent_cx);
+
+                        forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())
+                            .instrument(span)
+                    }))
                     .await
                 {
-                    eprintln!("Error serving connection: {:?}", err);
+                    error!("Error serving connection: {:?}", err);
                 }
             });
         }
@@ -79,7 +125,7 @@ async fn forward_request(
     connection_pool: ConnectionPool,
     wasm_engine: Arc<WasmEngine>,
 ) -> Result<Response<Incoming>, BoxError> {
-    println!("Proxying request: {} {}", req.method(), req.uri());
+    info!("Processing request in pipeline");
 
     // 0. Execute Wasm L7 Filter (e.g., Auth, Rate Limit) natively via Wasmtime
     // For MVP USP Demonstration, we run a static WASM payload yielding an ACCEPT (200).
@@ -92,8 +138,8 @@ async fn forward_request(
         )
     "#;
     match wasm_engine.execute_filter(wat_filter.as_bytes()) {
-        Ok(code) => println!("Wasm Filter executed natively across FFI boundary. Exit Code: {}", code),
-        Err(e) => eprintln!("Wasm Filter execution failed: {}", e),
+        Ok(code) => debug!("Wasm Filter executed natively across FFI boundary. Exit Code: {}", code),
+        Err(e) => error!("Wasm Filter execution failed: {}", e),
     }
 
     // 1. Find the computationally optimal backend using Peak EWMA
@@ -102,7 +148,7 @@ async fn forward_request(
     let (upstream_addr, ewma_node) = match upstream_backend {
         Some(backend) => (backend.addr, backend.clone()),
         None => {
-            eprintln!("No healthy backends available!");
+            error!("No healthy backends available!");
             return Err(Box::from("No healthy backends available"));
         }
     };
@@ -129,7 +175,7 @@ async fn forward_request(
             let stream = match TcpStream::connect(upstream_addr).await {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Failed to connect to backend: {}", e);
+                    error!("Failed to connect to backend {}: {}", upstream_addr, e);
                     return Err(Box::new(e));
                 }
             };
@@ -140,7 +186,7 @@ async fn forward_request(
             let (s, conn) = match hyper::client::conn::http1::handshake(io).await {
                 Ok(handshake) => handshake,
                 Err(e) => {
-                    eprintln!("Failed HTTP handshake with backend: {}", e);
+                    error!("Failed HTTP handshake with backend: {}", e);
                     return Err(Box::new(e));
                 }
             };
@@ -148,7 +194,7 @@ async fn forward_request(
             // Spawn a task to drive the connection
             tokio::task::spawn(async move {
                 if let Err(err) = conn.await {
-                    eprintln!("Connection failed: {:?}", err);
+                    error!("Connection failed: {:?}", err);
                 }
             });
 
