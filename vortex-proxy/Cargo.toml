@@ -32,6 +32,10 @@ opentelemetry-otlp = { version = "0.14", features = ["trace", "grpc-tonic", "tok
 metrics = "0.22"
 metrics-exporter-prometheus = "0.13"
 
+# Memory Allocation (Performance Hardening)
+jemallocator = "0.5"
+core_affinity = "0.8"
+
 [dev-dependencies]
 reqwest = "0.12"
 tokio = { version = "1.0", features = ["rt", "macros", "test-util"] }

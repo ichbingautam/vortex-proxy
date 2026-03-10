@@ -15,6 +15,13 @@ mod connection_pool;
 pub mod telemetry;
 pub mod metrics_ext;
 
+#[cfg(not(target_env = "msvc"))]
+use jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
 use vortex_core::domain::backend::{Backend, BackendId};
