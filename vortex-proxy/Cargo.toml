@@ -36,6 +36,10 @@ metrics-exporter-prometheus = "0.13"
 jemallocator = "0.5"
 core_affinity = "0.8"
 
+# QUIC / HTTP/3
+quinn = "0.11"
+rcgen = "0.13"
+
 [dev-dependencies]
 reqwest = "0.12"
 tokio = { version = "1.0", features = ["rt", "macros", "test-util"] }

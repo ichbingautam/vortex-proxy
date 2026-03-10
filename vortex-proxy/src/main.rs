@@ -14,6 +14,7 @@ mod health_check;
 mod connection_pool;
 pub mod telemetry;
 pub mod metrics_ext;
+mod quic_server;
 
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
@@ -97,6 +98,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_engine = Arc::new(WasmEngine::new());
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8443));
+
+    // Spawn the QUIC / HTTP/3 server concurrently on the same port (UDP)
+    let quic_routing_table = routing_table.clone();
+    let quic_addr = addr;
+    tokio::spawn(async move {
+        if let Err(e) = quic_server::start_quic_server(quic_addr, "certs/cert.pem", "certs/key.pem", quic_routing_table).await {
+            eprintln!("QUIC Server failed: {}", e);
+        }
+    });
 
     // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
     if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table, connection_pool, wasm_engine).await {
