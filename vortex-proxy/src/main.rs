@@ -24,6 +24,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 use tokio_rustls::TlsAcceptor;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use vortex_core::domain::backend::{Backend, BackendId};
 use vortex_core::domain::routing::RoutingTable;
 use crate::connection_pool::pool::ConnectionPool;
@@ -33,8 +34,27 @@ use vortex_filters::wasm_engine::WasmEngine;
 ///
 /// This initializes the multi-threaded Tokio runtime, loads the configuration,
 /// and begins listening for incoming TCP connections.
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let core_ids = core_affinity::get_core_ids().unwrap_or_default();
+    let core_idx = Arc::new(AtomicUsize::new(0));
+    let num_cores = core_ids.len();
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(if num_cores > 0 { num_cores } else { 4 })
+        .on_thread_start(move || {
+            if num_cores > 0 {
+                let idx = core_idx.fetch_add(1, Ordering::SeqCst);
+                let core = core_ids[idx % num_cores];
+                core_affinity::set_for_current(core);
+            }
+        })
+        .build()?;
+
+    rt.block_on(async_main())
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize non-blocking OpenTelemetry tracing
     telemetry::init_telemetry().unwrap();
 
