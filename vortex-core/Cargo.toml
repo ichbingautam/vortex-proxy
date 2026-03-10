@@ -10,8 +10,13 @@ arc-swap = "1.6"
 async-trait = "0.1"
 
 [dev-dependencies]
+criterion = "0.5"
 proptest = "1.4"
 tokio = { version = "1.0", features = ["rt", "macros", "time"] }
+
+[[bench]]
+name = "ewma_benchmark"
+harness = false
 
 [lints]
 workspace = true
