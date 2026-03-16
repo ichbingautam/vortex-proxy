@@ -45,6 +45,44 @@ Trace aggregation limits datapath speeds if implemented naively.
 - **HTTP/3 (QUIC) Ready**: Initialized a pure `quinn` UDP listener side-by-side with TLS offloading, paving the way for advanced multiplexed QUIC streams at the edge.
 - **Zero-Downtime Config Swaps**: Leverages `arc-swap` for atomic routing table updates via an internal gRPC administrative API without dropping active connections.
 
+## Request Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant V as Vortex Proxy
+    participant F as Wasmtime Filters
+    participant R as Redis (GCRA)
+    participant B as Backend Service
+
+    C->>V: HTTP/2 or QUIC Request
+    V->>F: Execute Wasm bytecode (Headers)
+    alt Wasm Rejects
+        F-->>V: Deny / Modify
+        V-->>C: 403 Forbidden
+    else Wasm Allows
+        F-->>V: Proceed
+    end
+    V->>R: Execute Lua Script (Limit Check)
+    alt Limit Exceeded
+        R-->>V: 429 Too Many Requests
+        V-->>C: 429 Too Many Requests
+    else Limit OK
+        R-->>V: Allowed
+    end
+    V->>V: Peak EWMA Routing & Node Select
+    V->>B: Forward Request (Lock-Free Pool)
+    B-->>V: HTTP Response
+    V->>V: Asynchronous OTLP Telemetry Export
+    V-->>C: HTTP Response
+```
+
+## Architecture & Technical Details
+
+- **Concurrency Model**: Vortex utilizes Tokio's work-stealing executor alongside thread-pinning. Cross-thread communication is heavily optimized using atomic lock-free primitives wrapper like `arc-swap`, effectively eliminating mutex contention on the hot path.
+- **Control Plane Isolation**: The management APIs (gRPC via Unix Domain Sockets) operate independently of the data plane. Configuration updates, such as backend rotations or WASM payload swaps, happen atomically without interrupting actively proxied streams.
+- **Zero-Copy Forwarding**: By leaning on Hyper's streaming traits, the request and response bodies are streamed directly between sockets without intermediate buffering or string allocations.
+
 ## Project Structure
 
 The project is structured as a Cargo Workspace utilizing Hexagonal Architecture principles:
