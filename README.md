@@ -86,6 +86,7 @@ sequenceDiagram
 ## Technical Deep Dive & API References
 
 ### 1. The Peak EWMA Autonomous Load Balancer
+
 Most proxies rely on Round-Robin or Least Connections. Under severe load spikes, these algorithms fail to react rapidly to degrading nodes (the "noisy neighbor" problem). Vortex implements an atomic, lock-free **Peak EWMA (Exponentially Weighted Moving Average)**.
 
 **The Math & Logic**:
