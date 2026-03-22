@@ -11,13 +11,14 @@ pub fn init_metrics_exporter(port: u16) -> Result<(), Box<dyn std::error::Error 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     // Build the Prometheus exporter and spawn its internal HTTP server
-    let builder = PrometheusBuilder::new()
-        .with_http_listener(addr);
+    let builder = PrometheusBuilder::new().with_http_listener(addr);
 
     // Optionally setup buckets for histograms (e.g. request duration)
     let builder = builder.set_buckets_for_metric(
         metrics_exporter_prometheus::Matcher::Full("vortex_request_duration_seconds".to_string()),
-        &[0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0]
+        &[
+            0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0, 10.0,
+        ],
     )?;
 
     builder.install()?;

@@ -23,7 +23,10 @@ impl WasmEngine {
     }
 
     /// Executes a simple WebAssembly module by executing 'execute' export.
-    pub fn execute_filter(&self, wasm_bytes: &[u8]) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn execute_filter(
+        &self,
+        wasm_bytes: &[u8],
+    ) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> {
         let module = Module::new(&self.engine, wasm_bytes)?;
         let mut store = Store::new(&self.engine, ());
         let instance = Instance::new(&mut store, &module, &[])?;

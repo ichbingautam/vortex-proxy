@@ -4,17 +4,14 @@
 
 #![deny(missing_docs)]
 
-use vortex_core;
-use vortex_filters;
-use vortex_admin;
 
-mod server;
-mod tls;
-mod health_check;
 mod connection_pool;
-pub mod telemetry;
+mod health_check;
 pub mod metrics_ext;
 mod quic_server;
+mod server;
+pub mod telemetry;
+mod tls;
 
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
@@ -23,12 +20,12 @@ use jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-use tokio_rustls::TlsAcceptor;
-use std::sync::Arc;
+use crate::connection_pool::pool::ConnectionPool;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use tokio_rustls::TlsAcceptor;
 use vortex_core::domain::backend::{Backend, BackendId};
 use vortex_core::domain::routing::RoutingTable;
-use crate::connection_pool::pool::ConnectionPool;
 use vortex_filters::wasm_engine::WasmEngine;
 
 /// The primary entrypoint for the Vortex reverse proxy.
@@ -78,8 +75,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Prepare mock backends for Phase 2 implementation
     let backends = vec![
-        Arc::new(Backend::new(BackendId(1), "127.0.0.1:9090".parse().unwrap())),
-        Arc::new(Backend::new(BackendId(2), "127.0.0.1:9091".parse().unwrap())),
+        Arc::new(Backend::new(
+            BackendId(1),
+            "127.0.0.1:9090".parse().unwrap(),
+        )),
+        Arc::new(Backend::new(
+            BackendId(2),
+            "127.0.0.1:9091".parse().unwrap(),
+        )),
     ];
     let routing_table = Arc::new(RoutingTable::new(backends));
 
@@ -89,7 +92,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the Control Plane API on a Unix Domain Socket
     let admin_routing_table = routing_table.clone();
     tokio::spawn(async move {
-        if let Err(e) = vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table).await {
+        if let Err(e) =
+            vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table)
+                .await
+        {
             eprintln!("Admin gRPC server failed: {}", e);
         }
     });
@@ -103,13 +109,28 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let quic_routing_table = routing_table.clone();
     let quic_addr = addr;
     tokio::spawn(async move {
-        if let Err(e) = quic_server::start_quic_server(quic_addr, "certs/cert.pem", "certs/key.pem", quic_routing_table).await {
+        if let Err(e) = quic_server::start_quic_server(
+            quic_addr,
+            "certs/cert.pem",
+            "certs/key.pem",
+            quic_routing_table,
+        )
+        .await
+        {
             eprintln!("QUIC Server failed: {}", e);
         }
     });
 
     // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
-    if let Err(e) = server::start_server(addr, Some(tls_acceptor), routing_table, connection_pool, wasm_engine).await {
+    if let Err(e) = server::start_server(
+        addr,
+        Some(tls_acceptor),
+        routing_table,
+        connection_pool,
+        wasm_engine,
+    )
+    .await
+    {
         eprintln!("Server failed: {}", e);
     }
 

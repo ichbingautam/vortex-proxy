@@ -2,13 +2,13 @@
 //!
 //! Provides the UDP listener and QUIC protocol negotiation.
 
+use crate::tls::{load_certs, load_private_key};
 use quinn::crypto::rustls::QuicServerConfig;
 use quinn::{Endpoint, ServerConfig};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{error, info};
 use vortex_core::domain::routing::SharedRoutingTable;
-use crate::tls::{load_certs, load_private_key};
 
 /// Starts a QUIC listener on the specified UDP address.
 pub async fn start_quic_server(
@@ -39,7 +39,10 @@ pub async fn start_quic_server(
         tokio::spawn(async move {
             match conn.await {
                 Ok(connection) => {
-                    info!("QUIC connection established from {}", connection.remote_address());
+                    info!(
+                        "QUIC connection established from {}",
+                        connection.remote_address()
+                    );
                     // In a production implementation, we would spawn an h3::server handler here
                     // to extract the HTTP semantics from the QUIC stream and route it.
                 }

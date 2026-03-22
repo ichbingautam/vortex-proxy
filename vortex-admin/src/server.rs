@@ -8,8 +8,8 @@ use crate::proto::admin_service_server::{AdminService, AdminServiceServer};
 use crate::proto::{GetStatsRequest, GetStatsResponse, ReloadConfigRequest, ReloadConfigResponse};
 
 use std::sync::Arc;
-use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::domain::backend::{Backend, BackendId};
+use vortex_core::domain::routing::SharedRoutingTable;
 
 /// Implementation of the AdminService gRPC server.
 pub struct AdminServerImpl {
@@ -30,12 +30,17 @@ impl AdminService for AdminServerImpl {
         request: Request<ReloadConfigRequest>,
     ) -> Result<Response<ReloadConfigResponse>, Status> {
         let req = request.into_inner();
-        println!("Received reload config request for path: {}", req.config_path);
+        println!(
+            "Received reload config request for path: {}",
+            req.config_path
+        );
 
         // Simulate reading a configuration file from the specified path
         // In a real implementation this would parse YAML/JSON into Domain objects.
-        let mut new_backends = Vec::new();
-        new_backends.push(Arc::new(Backend::new(BackendId(99), "127.0.0.1:9099".parse().unwrap())));
+        let new_backends = vec![Arc::new(Backend::new(
+            BackendId(99),
+            "127.0.0.1:9099".parse().unwrap(),
+        ))];
 
         // Zero-downtime, lock-free swap
         self.routing_table.update_backends(new_backends);

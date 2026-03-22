@@ -1,24 +1,24 @@
 //! Server module for handling incoming connections and HTTP parsing.
 
+use crate::connection_pool::pool::ConnectionPool;
+use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
-use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
-use tokio_rustls::TlsAcceptor;
-use std::net::SocketAddr;
-use tokio::net::{TcpListener, TcpStream};
-use vortex_core::domain::routing::SharedRoutingTable;
-use crate::connection_pool::pool::ConnectionPool;
-use vortex_core::load_balancer::selector::select_best_backend;
-use vortex_filters::wasm_engine::WasmEngine;
-use std::sync::Arc;
-use std::time::Instant;
-use tracing::{info, error, debug, Instrument};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use metrics::{counter, histogram};
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
-use metrics::{counter, histogram};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::TlsAcceptor;
+use tracing::{debug, error, info, Instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use vortex_core::domain::routing::SharedRoutingTable;
+use vortex_core::load_balancer::selector::select_best_backend;
+use vortex_filters::wasm_engine::WasmEngine;
 
 struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
 
@@ -31,7 +31,6 @@ impl<'a> Extractor for HeaderExtractor<'a> {
         self.0.keys().map(|k| k.as_str()).collect()
     }
 }
-
 
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -63,22 +62,30 @@ pub async fn start_server(
                         let pool_request = connection_pool.clone();
                         let wasm_request = wasm_engine.clone();
                         if let Err(err) = http1::Builder::new()
-                            .serve_connection(io, service_fn(move |req| {
-                                // Extract W3C Context at the edge
-                                let parent_cx = global::get_text_map_propagator(|prop| {
-                                    prop.extract(&HeaderExtractor(req.headers()))
-                                });
+                            .serve_connection(
+                                io,
+                                service_fn(move |req| {
+                                    // Extract W3C Context at the edge
+                                    let parent_cx = global::get_text_map_propagator(|prop| {
+                                        prop.extract(&HeaderExtractor(req.headers()))
+                                    });
 
-                                let span = tracing::info_span!(
-                                    "proxy_request",
-                                    method = %req.method(),
-                                    uri = %req.uri(),
-                                );
-                                span.set_parent(parent_cx);
+                                    let span = tracing::info_span!(
+                                        "proxy_request",
+                                        method = %req.method(),
+                                        uri = %req.uri(),
+                                    );
+                                    span.set_parent(parent_cx);
 
-                                forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())
+                                    forward_request(
+                                        req,
+                                        routers_request.clone(),
+                                        pool_request.clone(),
+                                        wasm_request.clone(),
+                                    )
                                     .instrument(span)
-                            }))
+                                }),
+                            )
                             .await
                         {
                             error!("Error serving connection: {:?}", err);
@@ -95,21 +102,29 @@ pub async fn start_server(
             let wasm_request = wasm_engine.clone();
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
-                    .serve_connection(io, service_fn(move |req| {
-                        let parent_cx = global::get_text_map_propagator(|prop| {
-                            prop.extract(&HeaderExtractor(req.headers()))
-                        });
+                    .serve_connection(
+                        io,
+                        service_fn(move |req| {
+                            let parent_cx = global::get_text_map_propagator(|prop| {
+                                prop.extract(&HeaderExtractor(req.headers()))
+                            });
 
-                        let span = tracing::info_span!(
-                            "proxy_request",
-                            method = %req.method(),
-                            uri = %req.uri(),
-                        );
-                        span.set_parent(parent_cx);
+                            let span = tracing::info_span!(
+                                "proxy_request",
+                                method = %req.method(),
+                                uri = %req.uri(),
+                            );
+                            span.set_parent(parent_cx);
 
-                        forward_request(req, routers_request.clone(), pool_request.clone(), wasm_request.clone())
+                            forward_request(
+                                req,
+                                routers_request.clone(),
+                                pool_request.clone(),
+                                wasm_request.clone(),
+                            )
                             .instrument(span)
-                    }))
+                        }),
+                    )
                     .await
                 {
                     error!("Error serving connection: {:?}", err);
@@ -139,7 +154,10 @@ async fn forward_request(
         )
     "#;
     match wasm_engine.execute_filter(wat_filter.as_bytes()) {
-        Ok(code) => debug!("Wasm Filter executed natively across FFI boundary. Exit Code: {}", code),
+        Ok(code) => debug!(
+            "Wasm Filter executed natively across FFI boundary. Exit Code: {}",
+            code
+        ),
         Err(e) => error!("Wasm Filter execution failed: {}", e),
     }
 
@@ -204,9 +222,19 @@ async fn forward_request(
     };
 
     // 4. Forward the original request directly with zero-copy stream
-    let uri_string = format!("http://{}{}", upstream_addr, req.uri().path_and_query().map(|x| x.as_str()).unwrap_or("/"));
+    let uri_string = format!(
+        "http://{}{}",
+        upstream_addr,
+        req.uri()
+            .path_and_query()
+            .map(|x| x.as_str())
+            .unwrap_or("/")
+    );
     *req.uri_mut() = uri_string.parse().unwrap();
-    req.headers_mut().insert(hyper::header::HOST, upstream_addr.to_string().parse().unwrap());
+    req.headers_mut().insert(
+        hyper::header::HOST,
+        upstream_addr.to_string().parse().unwrap(),
+    );
 
     if sender.ready().await.is_err() {
         return Err(Box::from("Failed to prepare connection sender"));
@@ -238,9 +266,9 @@ async fn forward_request(
 
 #[cfg(test)]
 mod tests {
-    use hyper::Request;
     use http_body_util::{BodyExt, Empty};
     use hyper::body::Bytes;
+    use hyper::Request;
 
     #[tokio::test]
     async fn test_forward_request_routes_to_9090() {
@@ -251,11 +279,14 @@ mod tests {
         let _req = Request::builder()
             .method("GET")
             .uri("/")
-            .body(Empty::<Bytes>::new().map_err(|never| match never {}).boxed())
+            .body(
+                Empty::<Bytes>::new()
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
             .unwrap();
 
         // This isn't a direct test since signatures expect Incoming, but we can verify the core logic via types.
         // For Phase 1, we acknowledge the proxy architecture is wired.
-        assert!(true);
     }
 }

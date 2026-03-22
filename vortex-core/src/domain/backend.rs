@@ -1,9 +1,9 @@
 //! Backend server models.
 
+use crate::load_balancer::ewma::PeakEwma;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use crate::load_balancer::ewma::PeakEwma;
 
 /// A unique identifier for a backend server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

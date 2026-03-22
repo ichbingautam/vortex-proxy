@@ -1,8 +1,8 @@
 //! Routing module for defining active traffic targets.
 
+use crate::domain::backend::SharedBackend;
 use arc_swap::ArcSwap;
 use std::sync::Arc;
-use crate::domain::backend::SharedBackend;
 
 /// A lock-free routing table mapping traffic to backends.
 ///

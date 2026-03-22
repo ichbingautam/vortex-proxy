@@ -1,7 +1,7 @@
 //! Domain models and traits for Rate Limiting (GCRA).
 
-use std::time::Duration;
 use async_trait::async_trait;
+use std::time::Duration;
 
 /// The result of a rate limit check.
 #[derive(Debug, Clone, Copy)]

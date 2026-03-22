@@ -1,8 +1,8 @@
 //! Integration tests for the Distributed GCRA Rate Limiter.
 
 use std::time::Duration;
-use vortex_filters::rate_limiter::redis_store::RedisStore;
 use vortex_core::domain::rate_limit::RateStore;
+use vortex_filters::rate_limiter::redis_store::RedisStore;
 
 #[tokio::test]
 #[ignore = "Requires a local Redis instance on port 6379"]

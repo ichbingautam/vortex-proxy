@@ -16,6 +16,8 @@ fn test_execute_wat_filter() {
         )
     "#;
 
-    let result = engine.execute_filter(wat.as_bytes()).expect("Failed to execute WASM module");
+    let result = engine
+        .execute_filter(wat.as_bytes())
+        .expect("Failed to execute WASM module");
     assert_eq!(result, 200);
 }

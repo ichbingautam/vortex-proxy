@@ -3,11 +3,11 @@
 //! Evaluates rate limits atomically using a Lua script to eliminate race conditions
 //! across a distributed proxy fleet.
 
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use async_trait::async_trait;
-use deadpool_redis::{Pool, Config, Runtime};
+use deadpool_redis::{Config, Pool, Runtime};
 use redis::Script;
-use vortex_core::domain::rate_limit::{RateStore, RateLimitResult};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use vortex_core::domain::rate_limit::{RateLimitResult, RateStore};
 
 /// A Redis-backed rate store implementing the GCRA algorithm.
 pub struct RedisStore {
@@ -22,7 +22,8 @@ impl RedisStore {
         let pool = cfg.create_pool(Some(Runtime::Tokio1)).unwrap();
 
         // This GCRA implementation calculates the Theoretical Arrival Time (TAT).
-        let script = Script::new(r#"
+        let script = Script::new(
+            r#"
             local key = KEYS[1]
             local limit = tonumber(ARGV[1])
             local period_ms = tonumber(ARGV[2])
@@ -54,7 +55,8 @@ impl RedisStore {
                 if remaining < 0 then remaining = 0 end
                 return {1, remaining, new_tat - now_ms}
             end
-        "#);
+        "#,
+        );
 
         Self { pool, script }
     }
@@ -73,12 +75,14 @@ impl RateStore for RedisStore {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         let period_ms = period.as_millis() as u64;
 
-        let result: Vec<i64> = self.script
+        let result: Vec<i64> = self
+            .script
             .key(key)
             .arg(limit)
             .arg(period_ms)
             .arg(now)
-            .invoke_async(&mut conn).await?;
+            .invoke_async(&mut conn)
+            .await?;
 
         let allowed = result[0] == 1;
         let remaining = result[1] as u64;

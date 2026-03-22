@@ -3,10 +3,10 @@
 //! Configures a non-blocking, MPSC-backed batch exporter for W3C trace contexts.
 
 use opentelemetry::global;
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfig, RandomIdGenerator, Sampler};
 use opentelemetry_sdk::Resource;
-use opentelemetry_otlp::WithExportConfig;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};

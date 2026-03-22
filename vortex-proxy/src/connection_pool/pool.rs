@@ -1,11 +1,11 @@
 //! Lock-free hot pool implementation using DashMap and SegQueue.
 
+use crossbeam_queue::SegQueue;
+use dashmap::DashMap;
+use hyper::body::Incoming;
+use hyper::client::conn::http1::SendRequest;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use dashmap::DashMap;
-use crossbeam_queue::SegQueue;
-use hyper::client::conn::http1::SendRequest;
-use hyper::body::Incoming;
 
 /// A lock-free two-stage hot pool for caching backend TCP connections.
 #[derive(Debug, Clone)]
@@ -43,7 +43,8 @@ impl ConnectionPool {
             return;
         }
 
-        let queue = self.idle_connections
+        let queue = self
+            .idle_connections
             .entry(addr)
             .or_insert_with(|| Arc::new(SegQueue::new()))
             .value()

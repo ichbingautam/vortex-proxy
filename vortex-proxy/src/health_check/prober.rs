@@ -26,8 +26,10 @@ pub fn spawn_health_checker(routing_table: SharedRoutingTable, interval_ms: u64)
                 // In Phase 3, we can extend this to L7 HTTP probes or gRPC Ping checks
                 let is_healthy = match time::timeout(
                     Duration::from_millis(1500),
-                    TcpStream::connect(backend.addr)
-                ).await {
+                    TcpStream::connect(backend.addr),
+                )
+                .await
+                {
                     Ok(Ok(_stream)) => true, // Successfully connected
                     _ => false,              // Timeout or Connection Refused
                 };
