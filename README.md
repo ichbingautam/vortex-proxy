@@ -1,5 +1,7 @@
 # Vortex Proxy Engine
 
+[![CI](https://github.com/ichbingautam/vortex-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/ichbingautam/vortex-proxy/actions/workflows/ci.yml)
+
 Vortex is a high-performance, programmable L7 proxy built entirely in Rust. Designed around a Hexagonal Architecture (Ports and Adapters) through a pure multi-crate Cargo workspace, it heavily emphasizes zero-overhead abstractions, non-blocking telemetry, and extreme tailorability via WebAssembly.
 
 ## Key Features
