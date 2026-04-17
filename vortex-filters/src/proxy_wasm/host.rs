@@ -19,7 +19,7 @@ pub trait HostEnvironment: Send + Sync {
 /// `T` must contain a reference or the actual `HostEnvironment` traits implementation.
 pub fn register_proxy_wasm_abi<T>(
     linker: &mut Linker<T>,
-) -> anyhow::Result<()> 
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
 where
     T: HostEnvironment + 'static
 {
@@ -56,7 +56,7 @@ where
     linker.func_wrap(
         "env",
         "proxy_get_header_map_value",
-        |mut caller: Caller<'_, T>, map_type: i32, key_data: i32, key_size: i32, return_value_data: i32, return_value_size: i32| -> i32 {
+        |mut caller: Caller<'_, T>, map_type: i32, key_data: i32, key_size: i32, _return_value_data: i32, _return_value_size: i32| -> i32 {
             let mem = match caller.get_export("memory") {
                 Some(Extern::Memory(m)) => m,
                 _ => return WasmResult::InternalFailure as i32,
@@ -73,7 +73,7 @@ where
             };
 
             let env = caller.data();
-            if let Some(val) = env.get_header_map_value(map_type, key_str) {
+            if let Some(_val) = env.get_header_map_value(map_type, key_str) {
                 // Write back logic to guest memory is needed here (allocating on guest)
                 // We'd typically call proxy_on_memory_allocate. For brevity, skipped in this stub.
                 println!("Proxy-wasm stub: intercepted header read for {}", key_str);

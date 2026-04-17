@@ -103,18 +103,17 @@ Vortex enables dynamic L7 filtering (headers manipulation, authentication, custo
 
 **WASM ABI Implementation**:
 
-Vortex passes the request context through an explicitly typed WebAssembly memory interface using `wasmtime`'s `Memory` and `Linker` mechanisms.
-Currently, the proxy relies on a static ABI where the `.wasm` module must export an `execute` function returning a 32-bit integer status code.
+Vortex has been upgraded to natively implement the standard **[Proxy-WASM ABI](https://github.com/proxy-wasm/spec)** host environment. This massive leap means Vortex is now instantly compatible with thousands of existing Envoy, Istio, and Proxy-Wasm plugins out-of-the-box (like Coraza WAF). 
 
-*(Example Minimal Filter in `.wat`)*:
+Instead of a custom API, plugins written in Rust, TinyGo, or AssemblyScript communicate with Vortex through standardized host callbacks like `proxy_log`, `proxy_get_header_map_value`, and `proxy_continue_stream` directly routed via our `vortex-filters` linker.
+
+*(Example flow when a Proxy-Wasm plugin executes)*:
 
 ```wasm
-(module
-    ;; Rejects the request natively with a 403 Forbidden
-    (func (export "execute") (result i32)
-        i32.const 403
-    )
-)
+;; 1. Plugin mounts Wasm memory
+;; 2. Envoy/Vortex Host executes: proxy_on_request_headers(...)
+;; 3. Plugin calls host: (call $proxy_get_header_map_value (i32.const 0) ...)
+;; 4. Plugin returns: 0 (Action::Continue) or 1 (Action::Pause)
 ```
 
 ### 3. Unix Socket Admin API (gRPC/ProtoBuf)

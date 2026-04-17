@@ -4,17 +4,29 @@
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WasmResult {
+    /// Success
     Ok = 0,
+    /// Not found
     NotFound = 1,
+    /// Bad argument
     BadArgument = 2,
+    /// Serialization failure
     SerializationFailure = 3,
+    /// Parse failure
     ParseFailure = 4,
+    /// Bad expression
     BadExpression = 5,
+    /// Invalid memory access
     InvalidMemoryAccess = 6,
+    /// Empty result
     Empty = 7,
+    /// CAS mismatch
     CasMismatch = 8,
+    /// Result mismatch
     ResultMismatch = 9,
+    /// Internal failure
     InternalFailure = 10,
+    /// Broken connection
     BrokenConnection = 11,
 }
 
@@ -38,6 +50,8 @@ impl From<i32> for WasmResult {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
+    /// Continue execution
     Continue = 0,
+    /// Pause execution
     Pause = 1,
 }
