@@ -15,19 +15,19 @@ async fn test_gcra_rate_limiting() {
     let period = Duration::from_secs(1);
 
     // First request should pass
-    let res = store.check_rate_limit(key, limit, period).await.unwrap();
+    let res = store.check_rate_limit(key, limit, period, 1).await.unwrap();
     assert!(res.allowed);
     assert_eq!(res.remaining, 4);
 
     // Exhaust the limit
     for i in 0..4 {
-        let res = store.check_rate_limit(key, limit, period).await.unwrap();
+        let res = store.check_rate_limit(key, limit, period, 1).await.unwrap();
         assert!(res.allowed);
         assert_eq!(res.remaining, 3 - i as u64);
     }
 
     // 6th request should fail
-    let res = store.check_rate_limit(key, limit, period).await.unwrap();
+    let res = store.check_rate_limit(key, limit, period, 1).await.unwrap();
     assert!(!res.allowed);
     assert_eq!(res.remaining, 0);
     assert!(res.reset_after.as_millis() > 0);

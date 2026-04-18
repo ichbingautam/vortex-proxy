@@ -28,6 +28,7 @@ impl RedisStore {
             local limit = tonumber(ARGV[1])
             local period_ms = tonumber(ARGV[2])
             local now_ms = tonumber(ARGV[3])
+            local cost = tonumber(ARGV[4])
 
             local emission_interval = period_ms / limit
             local burst_offset = period_ms
@@ -40,11 +41,12 @@ impl RedisStore {
             end
 
             tat = math.max(tat, now_ms)
-            local new_tat = tat + emission_interval
+            local new_tat = tat + (emission_interval * cost)
             local allow_at = new_tat - burst_offset
 
             if allow_at > now_ms then
                 -- Rate Limit Exceeded: return {allowed=0, remaining, reset_after_ms}
+                -- Calculate remaining BEFORE the requested cost
                 local remaining = math.floor((period_ms - (tat - now_ms)) / emission_interval)
                 if remaining < 0 then remaining = 0 end
                 return {0, remaining, tat - now_ms}
@@ -69,6 +71,7 @@ impl RateStore for RedisStore {
         key: &str,
         limit: u64,
         period: Duration,
+        cost: u64,
     ) -> Result<RateLimitResult, Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = self.pool.get().await?;
 
@@ -81,6 +84,7 @@ impl RateStore for RedisStore {
             .arg(limit)
             .arg(period_ms)
             .arg(now)
+            .arg(cost)
             .invoke_async(&mut conn)
             .await?;
 

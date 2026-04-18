@@ -16,7 +16,7 @@ async fn test_zero_downtime_config_swap_draining() {
 
     // 1. A request comes in and grabs a reference to the active backend via arc-swap.
     let active_backend_for_req1 = routing_table
-        .get_healthy_backend()
+        .get_best_backend()
         .expect("Expected healthy backend");
     assert_eq!(active_backend_for_req1.id.0, 1);
 
@@ -36,7 +36,7 @@ async fn test_zero_downtime_config_swap_draining() {
 
     // 4. Any completely new requests moving forward must instantly grab the updated topology.
     let active_backend_for_req2 = routing_table
-        .get_healthy_backend()
+        .get_best_backend()
         .expect("Expected healthy backend");
     assert_eq!(active_backend_for_req2.id.0, 2);
 }

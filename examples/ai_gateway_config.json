@@ -1,0 +1,44 @@
+{
+  "api_version": "v1",
+  "name": "vortex-ai-edge",
+  "rate_limits": {
+    "global_default": {
+      "limit": 10000,
+      "period_ms": 60000
+    },
+    "token_tiers": {
+      "premium": {
+        "limit": 500000
+      },
+      "free": {
+        "limit": 50000
+      }
+    }
+  },
+  "routes": [
+    {
+      "path_prefix": "/v1/chat/completions",
+      "plugins": ["proxy_wasm:ai_token_extractor", "proxy_wasm:semantic_cache"],
+      "ai_gateway": {
+        "primary_model": "gpt-4",
+        "semantic_cache_ttl_seconds": 3600,
+        "fallbacks": [
+          "claude-3-opus",
+          "gpt-3.5-turbo"
+        ]
+      },
+      "backends": [
+        {
+          "id": 1,
+          "address": "10.0.1.10:443",
+          "supported_models": ["gpt-4", "gpt-3.5-turbo"]
+        },
+        {
+          "id": 2,
+          "address": "10.0.1.20:443",
+          "supported_models": ["claude-3-opus"]
+        }
+      ]
+    }
+  ]
+}

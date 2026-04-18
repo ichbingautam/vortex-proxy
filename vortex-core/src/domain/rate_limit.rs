@@ -24,10 +24,12 @@ pub trait RateStore: Send + Sync {
     /// * `key` - The unique identifier for the limit (e.g., "ip:192.168.1.1").
     /// * `limit` - The maximum burst size (capacity).
     /// * `period` - The time period over which the limit applies (refill rate).
+    /// * `cost` - The number of tokens/capacity units this request consumes.
     async fn check_rate_limit(
         &self,
         key: &str,
         limit: u64,
         period: Duration,
+        cost: u64,
     ) -> Result<RateLimitResult, Box<dyn std::error::Error + Send + Sync>>;
 }

@@ -21,6 +21,14 @@ pub fn init_metrics_exporter(port: u16) -> Result<(), Box<dyn std::error::Error 
         ],
     )?;
 
+    // AI Gateway specific metrics: Token usage distribution
+    let builder = builder.set_buckets_for_metric(
+        metrics_exporter_prometheus::Matcher::Full("vortex_ai_token_usage".to_string()),
+        &[
+            10.0, 50.0, 100.0, 500.0, 1000.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0,
+        ],
+    )?;
+
     builder.install()?;
 
     tracing::info!("Prometheus metrics exporter started on http://{}", addr);

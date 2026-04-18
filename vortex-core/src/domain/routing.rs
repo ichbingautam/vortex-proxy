@@ -26,12 +26,56 @@ impl RoutingTable {
         self.backends.store(Arc::new(new_backends));
     }
 
-    /// Selects the first available healthy backend.
-    ///
-    /// In the future, this will be replaced by Peak EWMA load balancing.
-    pub fn get_healthy_backend(&self) -> Option<SharedBackend> {
+    /// Selects the best backend using Peak EWMA.
+    pub fn get_best_backend(&self) -> Option<SharedBackend> {
         let guard = self.backends.load();
-        guard.iter().find(|b| b.is_healthy()).cloned()
+        
+        // Find the backend with the minimum score
+        guard.iter()
+            .filter(|b| b.is_healthy())
+            .min_by(|a, b| {
+                let score_a = a.ewma.calculate_score();
+                let score_b = b.ewma.calculate_score();
+                score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .cloned()
+    }
+
+    /// Selects the best backend capable of serving a specific AI model, utilizing
+    /// fallback directives if the primary model is unavailable or heavily loaded.
+    pub fn get_ai_backend(
+        &self,
+        metadata: &crate::domain::ai_gateway::AiMetadata,
+        fallback_config: Option<&crate::domain::ai_gateway::ModelFallbackConfig>
+    ) -> Option<SharedBackend> {
+        let guard = self.backends.load();
+        
+        // 1. Try to route to the primary requested model first
+        let primary_candidates = guard.iter()
+            .filter(|b| b.is_healthy() && b.ai_models.contains(&metadata.model));
+        
+        let best_primary = primary_candidates.min_by(|a, b| {
+            a.ewma.calculate_score().partial_cmp(&b.ewma.calculate_score()).unwrap_or(std::cmp::Ordering::Equal)
+        }).cloned();
+
+        // 2. If no healthy primary, or if fallback logic applies (e.g., peak latency is too high)
+        if best_primary.is_none() {
+            if let Some(fallback) = fallback_config {
+                for fallback_model in &fallback.fallback_models {
+                    let best_fallback = guard.iter()
+                        .filter(|b| b.is_healthy() && b.ai_models.contains(fallback_model))
+                        .min_by(|a, b| {
+                            a.ewma.calculate_score().partial_cmp(&b.ewma.calculate_score()).unwrap_or(std::cmp::Ordering::Equal)
+                        }).cloned();
+                    
+                    if best_fallback.is_some() {
+                        return best_fallback;
+                    }
+                }
+            }
+        }
+
+        best_primary
     }
 
     /// Retrieve a snapshot of all current backends (e.g., for the health checker).

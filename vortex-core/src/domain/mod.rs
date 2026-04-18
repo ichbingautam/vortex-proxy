@@ -5,3 +5,6 @@ pub mod routing;
 
 /// Core generic traits for rate limiting algorithms.
 pub mod rate_limit;
+
+/// AI Gateway utilities.
+pub mod ai_gateway;
