@@ -4,7 +4,7 @@ members = [
     "vortex-core",
     "vortex-proxy",
     "vortex-filters",
-    "vortex-admin",
+    "vortex-admin", "vortex-ebpf",
 ]
 
 [workspace.package]

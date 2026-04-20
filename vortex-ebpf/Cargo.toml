@@ -1,0 +1,19 @@
+[package]
+name = "vortex-ebpf"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "eBPF/XDP networking acceleration for Vortex proxy"
+
+[dependencies]
+tracing = "0.1"
+
+# aya is only natively supported on Linux.
+# We will conditionally compile eBPF features to prevent macOS build breakages.
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.12.0", features = ["async_tokio"] }
+aya-obj = "0.1.0"
+libc = "0.2"
+
+[lints]
+workspace = true
