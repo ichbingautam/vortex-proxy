@@ -4,7 +4,6 @@
 
 #![deny(missing_docs)]
 
-
 mod connection_pool;
 mod health_check;
 pub mod metrics_ext;

@@ -2,8 +2,8 @@
 //!
 //! Exposes WebAssembly plugin execution via Wasmtime for dynamic proxy filters.
 
-pub mod wasm_engine;
 pub mod proxy_wasm;
+pub mod wasm_engine;
 
 /// Distributed rate limiting evaluators and redis storage drivers.
 pub mod rate_limiter;
