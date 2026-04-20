@@ -99,6 +99,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Spawn Kubernetes CRD Watcher
+    let k8s_routing_table = routing_table.clone();
+    tokio::spawn(async move {
+        if let Err(e) = vortex_admin::k8s_watcher::start_k8s_watcher(k8s_routing_table).await {
+            tracing::warn!("K8s watcher not running (e.g., outside cluster) or failed: {}", e);
+        }
+    });
+
     let connection_pool = ConnectionPool::new();
     let wasm_engine = Arc::new(WasmEngine::new());
 

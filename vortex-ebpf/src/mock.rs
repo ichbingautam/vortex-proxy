@@ -7,6 +7,7 @@ use std::net::IpAddr;
 pub struct MockXdpLimiter;
 
 impl MockXdpLimiter {
+    /// Create a new MockXdpLimiter
     pub fn new() -> Self {
         Self
     }
