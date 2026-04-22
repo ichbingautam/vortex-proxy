@@ -12,9 +12,14 @@ pub mod mock;
 /// A unified interface to the XDP rate-limiter, regardless of OS.
 pub trait XdpRateLimiter: Send + Sync {
     /// Add an IP address to the kernel-space drop list.
-    fn block_ip(&self, ip: std::net::IpAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    
-    /// Remove an IP address from the kernel-space drop list.
-    fn unblock_ip(&self, ip: std::net::IpAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-}
+    fn block_ip(
+        &self,
+        ip: std::net::IpAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
+    /// Remove an IP address from the kernel-space drop list.
+    fn unblock_ip(
+        &self,
+        ip: std::net::IpAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}

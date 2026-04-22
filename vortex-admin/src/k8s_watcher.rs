@@ -62,9 +62,13 @@ pub async fn start_k8s_watcher(
                         .address
                         .parse()
                         .unwrap_or_else(|_| "127.0.0.1:80".parse().unwrap());
-                    
+
                     let models = b.ai_models.unwrap_or_default();
-                    new_backends.push(Arc::new(Backend::with_models(BackendId(b.id), addr, models)));
+                    new_backends.push(Arc::new(Backend::with_models(
+                        BackendId(b.id),
+                        addr,
+                        models,
+                    )));
                 }
 
                 if !new_backends.is_empty() {

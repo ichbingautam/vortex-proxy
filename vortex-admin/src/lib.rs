@@ -1,7 +1,7 @@
 //! Control plane Unix socket API for Vortex.
 
-pub mod server;
 pub mod k8s_watcher;
+pub mod server;
 
 /// Protobuf generated code for Vortex admin API.
 #[allow(missing_docs)]
