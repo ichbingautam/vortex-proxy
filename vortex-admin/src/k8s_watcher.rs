@@ -24,13 +24,18 @@ use vortex_core::domain::routing::RoutingTable;
     namespaced
 )]
 pub struct VortexRouteSpec {
+    /// The list of backend maps specified in this route.
     pub backends: Vec<VortexBackendMap>,
 }
 
+/// A mapping definition for a proxy backend, including its ID, address, and optionally the AI models it serves.
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 pub struct VortexBackendMap {
+    /// The unique identifier of the backend.
     pub id: u32,
+    /// The address of the backend, e.g. "127.0.0.1:8080".
     pub address: String,
+    /// The AI models served by this backend, if any.
     pub ai_models: Option<Vec<String>>,
 }
 
