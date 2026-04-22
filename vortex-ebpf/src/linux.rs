@@ -5,13 +5,14 @@ use aya::maps::HashMap;
 use aya::programs::{Xdp, XdpFlags};
 use aya::Bpf;
 use std::convert::TryInto;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
 /// Loads the pre-compiled XDP bytecodes into the Linux kernel
 /// and attaches it to the specified network interface.
 pub struct LinuxXdpLimiter {
     bpf: Arc<Mutex<Bpf>>,
+    #[allow(dead_code)]
     interface: String,
 }
 
