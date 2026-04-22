@@ -4,15 +4,14 @@
 //! the lock-free proxy engine directly.
 
 use kube::{
-    api::{Api, ListParams},
-    core::ObjectMeta,
+    api::Api,
     runtime::{watcher, WatchStreamExt},
     Client, CustomResource,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use vortex_core::domain::backend::{Backend, BackendId};
 use vortex_core::domain::routing::RoutingTable;
 
