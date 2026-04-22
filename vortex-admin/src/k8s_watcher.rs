@@ -43,7 +43,8 @@ pub async fn start_k8s_watcher(
     let api: Api<VortexRoute> = Api::default_namespaced(client);
 
     // Watch for events on VortexRoute resources
-    let mut stream = watcher(api, watcher::Config::default()).applied_objects();
+    let stream = watcher(api, watcher::Config::default()).applied_objects();
+    tokio::pin!(stream);
 
     tracing::info!("Kubernetes Watcher initialized. Waiting for VortexRoute CRDs...");
 
