@@ -16,9 +16,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use vortex_core::domain::ai_gateway::AiMetadata;
 use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::load_balancer::selector::select_best_backend;
-use vortex_core::domain::ai_gateway::AiMetadata;
 use vortex_filters::wasm_engine::WasmEngine;
 
 struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
@@ -39,11 +39,15 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 /// Extracts AI metadata from custom headers to facilitate token-aware rate limiting.
 fn extract_ai_metadata(req: &Request<Incoming>) -> Option<AiMetadata> {
     let model = req.headers().get("x-ai-model")?.to_str().ok()?.to_string();
-    let estimated_tokens = req.headers().get("x-ai-estimated-tokens")
+    let estimated_tokens = req
+        .headers()
+        .get("x-ai-estimated-tokens")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(1);
-    let semantic_hash = req.headers().get("x-ai-semantic-hash")
+    let semantic_hash = req
+        .headers()
+        .get("x-ai-semantic-hash")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
@@ -197,7 +201,10 @@ async fn forward_request(
     }
 
     let cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
-        info!("AI Gateway payload detected. Model: {}, Tokens: {}", ai_meta.model, ai_meta.estimated_tokens);
+        info!(
+            "AI Gateway payload detected. Model: {}, Tokens: {}",
+            ai_meta.model, ai_meta.estimated_tokens
+        );
         ai_meta.estimated_tokens
     } else {
         1 // Standard request cost
@@ -338,7 +345,11 @@ mod tests {
             .header("x-ai-model", "gpt-4")
             .header("x-ai-estimated-tokens", "150")
             .header("x-ai-semantic-hash", "abcdef123")
-            .body(Empty::<Bytes>::new().map_err(|never| match never {}).boxed())
+            .body(
+                Empty::<Bytes>::new()
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
             .unwrap();
 
         let meta = crate::server::extract_ai_metadata(&req).expect("Failed to extract");

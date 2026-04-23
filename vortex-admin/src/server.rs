@@ -19,8 +19,14 @@ pub struct AdminServerImpl {
 
 impl AdminServerImpl {
     /// Creates a new administration server handling requests.
-    pub fn new(routing_table: SharedRoutingTable, active_connections: Arc<std::sync::atomic::AtomicUsize>) -> Self {
-        Self { routing_table, active_connections }
+    pub fn new(
+        routing_table: SharedRoutingTable,
+        active_connections: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        Self {
+            routing_table,
+            active_connections,
+        }
     }
 }
 
@@ -57,7 +63,9 @@ impl AdminService for AdminServerImpl {
         _request: Request<GetStatsRequest>,
     ) -> Result<Response<GetStatsResponse>, Status> {
         Ok(Response::new(GetStatsResponse {
-            active_connections: self.active_connections.load(std::sync::atomic::Ordering::Relaxed) as u64,
+            active_connections: self
+                .active_connections
+                .load(std::sync::atomic::Ordering::Relaxed) as u64,
         }))
     }
 }

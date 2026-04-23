@@ -87,7 +87,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         } else {
-            tracing::warn!("Could not find eBPF object file at {}. Skipping eBPF initialization.", bpf_path);
+            tracing::warn!(
+                "Could not find eBPF object file at {}. Skipping eBPF initialization.",
+                bpf_path
+            );
             None
         }
     };
@@ -114,9 +117,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_routing_table = routing_table.clone();
     let admin_active_connections = active_connections.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table, admin_active_connections)
-                .await
+        if let Err(e) = vortex_admin::server::start_admin_server(
+            "/tmp/vortex_admin.sock",
+            admin_routing_table,
+            admin_active_connections,
+        )
+        .await
         {
             eprintln!("Admin gRPC server failed: {}", e);
         }
