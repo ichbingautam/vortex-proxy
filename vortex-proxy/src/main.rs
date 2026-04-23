@@ -72,6 +72,26 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to load TLS configuration");
     let tls_acceptor = TlsAcceptor::from(tls_config);
 
+    #[cfg(target_os = "linux")]
+    let _xdp_limiter = {
+        let bpf_path = "vortex-ebpf/bpf/xdp_drop.o";
+        if let Ok(bpf_code) = std::fs::read(bpf_path) {
+            match vortex_ebpf::linux::LinuxXdpLimiter::new("eth0", &bpf_code) {
+                Ok(limiter) => {
+                    tracing::info!("Successfully loaded eBPF XDP rate limiter on eth0");
+                    Some(Arc::new(limiter))
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load eBPF XDP rate limiter: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::warn!("Could not find eBPF object file at {}. Skipping eBPF initialization.", bpf_path);
+            None
+        }
+    };
+
     // Prepare mock backends for Phase 2 implementation
     let backends = vec![
         Arc::new(Backend::new(
@@ -88,11 +108,14 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // Start background health-checker probing every 5 seconds
     health_check::prober::spawn_health_checker(routing_table.clone(), 5000);
 
+    let active_connections = Arc::new(AtomicUsize::new(0));
+
     // Spawn the Control Plane API on a Unix Domain Socket
     let admin_routing_table = routing_table.clone();
+    let admin_active_connections = active_connections.clone();
     tokio::spawn(async move {
         if let Err(e) =
-            vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table)
+            vortex_admin::server::start_admin_server("/tmp/vortex_admin.sock", admin_routing_table, admin_active_connections)
                 .await
         {
             eprintln!("Admin gRPC server failed: {}", e);
@@ -138,6 +161,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         routing_table,
         connection_pool,
         wasm_engine,
+        active_connections,
     )
     .await
     {

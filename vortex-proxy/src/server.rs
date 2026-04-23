@@ -18,6 +18,7 @@ use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::load_balancer::selector::select_best_backend;
+use vortex_core::domain::ai_gateway::AiMetadata;
 use vortex_filters::wasm_engine::WasmEngine;
 
 struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
@@ -35,6 +36,31 @@ impl<'a> Extractor for HeaderExtractor<'a> {
 // A generic boxed error type
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Extracts AI metadata from custom headers to facilitate token-aware rate limiting.
+fn extract_ai_metadata(req: &Request<Incoming>) -> Option<AiMetadata> {
+    let model = req.headers().get("x-ai-model")?.to_str().ok()?.to_string();
+    let estimated_tokens = req.headers().get("x-ai-estimated-tokens")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1);
+    let semantic_hash = req.headers().get("x-ai-semantic-hash")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    Some(AiMetadata {
+        model,
+        estimated_tokens,
+        semantic_hash,
+    })
+}
+
+struct ActiveConnGuard(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for ActiveConnGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// Starts the proxy server on the given address.
 pub async fn start_server(
     addr: SocketAddr,
@@ -42,6 +68,7 @@ pub async fn start_server(
     routing_table: SharedRoutingTable,
     connection_pool: ConnectionPool,
     wasm_engine: Arc<WasmEngine>,
+    active_connections: Arc<std::sync::atomic::AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
@@ -51,10 +78,14 @@ pub async fn start_server(
         let routing_table = routing_table.clone();
         let connection_pool = connection_pool.clone();
         let wasm_engine = wasm_engine.clone();
+        let active_connections_clone = active_connections.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
             tokio::task::spawn(async move {
+                let _guard = ActiveConnGuard(active_connections_clone.clone());
+                _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
                         let io = TokioIo::new(tls_stream);
@@ -100,7 +131,11 @@ pub async fn start_server(
             let routers_request = routing_table.clone();
             let pool_request = connection_pool.clone();
             let wasm_request = wasm_engine.clone();
+            let active_connections_clone = active_connections.clone();
             tokio::task::spawn(async move {
+                let _guard = ActiveConnGuard(active_connections_clone.clone());
+                _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(
                         io,
@@ -160,6 +195,13 @@ async fn forward_request(
         ),
         Err(e) => error!("Wasm Filter execution failed: {}", e),
     }
+
+    let cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
+        info!("AI Gateway payload detected. Model: {}, Tokens: {}", ai_meta.model, ai_meta.estimated_tokens);
+        ai_meta.estimated_tokens
+    } else {
+        1 // Standard request cost
+    };
 
     // 1. Find the computationally optimal backend using Peak EWMA
     let upstream_backend = select_best_backend(&routing_table);
@@ -288,5 +330,20 @@ mod tests {
 
         // This isn't a direct test since signatures expect Incoming, but we can verify the core logic via types.
         // For Phase 1, we acknowledge the proxy architecture is wired.
+    }
+
+    #[tokio::test]
+    async fn test_extract_ai_metadata() {
+        let req = Request::builder()
+            .header("x-ai-model", "gpt-4")
+            .header("x-ai-estimated-tokens", "150")
+            .header("x-ai-semantic-hash", "abcdef123")
+            .body(Empty::<Bytes>::new().map_err(|never| match never {}).boxed())
+            .unwrap();
+
+        let meta = crate::server::extract_ai_metadata(&req).expect("Failed to extract");
+        assert_eq!(meta.model, "gpt-4");
+        assert_eq!(meta.estimated_tokens, 150);
+        assert_eq!(meta.semantic_hash.as_deref(), Some("abcdef123"));
     }
 }

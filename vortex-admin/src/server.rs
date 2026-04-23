@@ -14,12 +14,13 @@ use vortex_core::domain::routing::SharedRoutingTable;
 /// Implementation of the AdminService gRPC server.
 pub struct AdminServerImpl {
     routing_table: SharedRoutingTable,
+    active_connections: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl AdminServerImpl {
     /// Creates a new administration server handling requests.
-    pub fn new(routing_table: SharedRoutingTable) -> Self {
-        Self { routing_table }
+    pub fn new(routing_table: SharedRoutingTable, active_connections: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        Self { routing_table, active_connections }
     }
 }
 
@@ -55,9 +56,8 @@ impl AdminService for AdminServerImpl {
         &self,
         _request: Request<GetStatsRequest>,
     ) -> Result<Response<GetStatsResponse>, Status> {
-        // TODO: Wire up actual telemetry here
         Ok(Response::new(GetStatsResponse {
-            active_connections: 0,
+            active_connections: self.active_connections.load(std::sync::atomic::Ordering::Relaxed) as u64,
         }))
     }
 }
@@ -66,6 +66,7 @@ impl AdminService for AdminServerImpl {
 pub async fn start_admin_server(
     socket_path: &str,
     routing_table: SharedRoutingTable,
+    active_connections: Arc<std::sync::atomic::AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Ensure any dangling socket from a previous process is cleaned up
     let _ = std::fs::remove_file(socket_path);
@@ -73,7 +74,7 @@ pub async fn start_admin_server(
     let uds = UnixListener::bind(socket_path)?;
     let stream = UnixListenerStream::new(uds);
 
-    let admin_service = AdminServerImpl::new(routing_table);
+    let admin_service = AdminServerImpl::new(routing_table, active_connections);
 
     println!("Starting Admin Unix Socket API at {}", socket_path);
 
