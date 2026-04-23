@@ -65,7 +65,7 @@ impl AdminService for AdminServerImpl {
         Ok(Response::new(GetStatsResponse {
             active_connections: self
                 .active_connections
-                .load(std::sync::atomic::Ordering::Relaxed) as u64,
+                .load(std::sync::atomic::Ordering::Relaxed) as u32,
         }))
     }
 }
