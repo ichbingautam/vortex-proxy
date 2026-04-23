@@ -37,7 +37,7 @@ impl<'a> Extractor for HeaderExtractor<'a> {
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Extracts AI metadata from custom headers to facilitate token-aware rate limiting.
-fn extract_ai_metadata(req: &Request<Incoming>) -> Option<AiMetadata> {
+fn extract_ai_metadata<T>(req: &Request<T>) -> Option<AiMetadata> {
     let model = req.headers().get("x-ai-model")?.to_str().ok()?.to_string();
     let estimated_tokens = req
         .headers()
@@ -200,7 +200,7 @@ async fn forward_request(
         Err(e) => error!("Wasm Filter execution failed: {}", e),
     }
 
-    let cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
+    let _cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
         info!(
             "AI Gateway payload detected. Model: {}, Tokens: {}",
             ai_meta.model, ai_meta.estimated_tokens
