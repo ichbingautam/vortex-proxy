@@ -160,6 +160,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
+    let rate_store = Arc::new(vortex_filters::rate_limiter::redis_store::RedisStore::new(&redis_url))
+        as Arc<dyn vortex_core::domain::rate_limit::RateStore>;
+
     // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
     if let Err(e) = server::start_server(
         addr,
@@ -168,6 +172,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         connection_pool,
         wasm_engine,
         active_connections,
+        rate_store,
     )
     .await
     {
