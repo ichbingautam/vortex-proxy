@@ -1,6 +1,9 @@
 //! Server module for handling incoming connections and HTTP parsing.
 
 use crate::connection_pool::pool::ConnectionPool;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Bytes;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -12,15 +15,12 @@ use opentelemetry::propagation::Extractor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use http_body_util::{BodyExt, Full};
-use http_body_util::combinators::BoxBody;
-use hyper::body::Bytes;
-use vortex_core::domain::rate_limit::RateStore;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use vortex_core::domain::ai_gateway::AiMetadata;
+use vortex_core::domain::rate_limit::RateStore;
 use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::load_balancer::selector::select_best_backend;
 use vortex_filters::wasm_engine::WasmEngine;
@@ -236,7 +236,11 @@ async fn forward_request(
                 .status(hyper::StatusCode::TOO_MANY_REQUESTS)
                 .header("X-RateLimit-Remaining", "0")
                 .header("X-RateLimit-Reset", res.reset_after.as_millis().to_string())
-                .body(Full::new(Bytes::from("Rate limit exceeded\n")).map_err(|never| match never {}).boxed())
+                .body(
+                    Full::new(Bytes::from("Rate limit exceeded\n"))
+                        .map_err(|never| match never {})
+                        .boxed(),
+                )
                 .unwrap();
             return Ok(response);
         }
