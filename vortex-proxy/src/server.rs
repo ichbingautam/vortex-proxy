@@ -12,6 +12,10 @@ use opentelemetry::propagation::Extractor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
+use http_body_util::{BodyExt, Full};
+use http_body_util::combinators::BoxBody;
+use hyper::body::Bytes;
+use vortex_core::domain::rate_limit::RateStore;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, Instrument};
@@ -73,16 +77,18 @@ pub async fn start_server(
     connection_pool: ConnectionPool,
     wasm_engine: Arc<WasmEngine>,
     active_connections: Arc<std::sync::atomic::AtomicUsize>,
+    rate_store: Arc<dyn RateStore>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, peer_addr) = listener.accept().await?;
         let routing_table = routing_table.clone();
         let connection_pool = connection_pool.clone();
         let wasm_engine = wasm_engine.clone();
         let active_connections_clone = active_connections.clone();
+        let rate_store_clone = rate_store.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
@@ -96,6 +102,7 @@ pub async fn start_server(
                         let routers_request = routing_table.clone();
                         let pool_request = connection_pool.clone();
                         let wasm_request = wasm_engine.clone();
+                        let rate_store_req = rate_store_clone.clone();
                         if let Err(err) = http1::Builder::new()
                             .serve_connection(
                                 io,
@@ -114,9 +121,11 @@ pub async fn start_server(
 
                                     forward_request(
                                         req,
+                                        peer_addr,
                                         routers_request.clone(),
                                         pool_request.clone(),
                                         wasm_request.clone(),
+                                        rate_store_req.clone(),
                                     )
                                     .instrument(span)
                                 }),
@@ -136,6 +145,7 @@ pub async fn start_server(
             let pool_request = connection_pool.clone();
             let wasm_request = wasm_engine.clone();
             let active_connections_clone = active_connections.clone();
+            let rate_store_req = rate_store_clone.clone();
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(active_connections_clone.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -157,9 +167,11 @@ pub async fn start_server(
 
                             forward_request(
                                 req,
+                                peer_addr,
                                 routers_request.clone(),
                                 pool_request.clone(),
                                 wasm_request.clone(),
+                                rate_store_req.clone(),
                             )
                             .instrument(span)
                         }),
@@ -176,10 +188,12 @@ pub async fn start_server(
 /// Handles incoming HTTP requests and proxies them to a healthy backend.
 async fn forward_request(
     mut req: Request<Incoming>,
+    client_addr: SocketAddr,
     routing_table: SharedRoutingTable,
     connection_pool: ConnectionPool,
     wasm_engine: Arc<WasmEngine>,
-) -> Result<Response<Incoming>, BoxError> {
+    rate_store: Arc<dyn RateStore>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, BoxError> {
     info!("Processing request in pipeline");
 
     // 0. Execute Wasm L7 Filter (e.g., Auth, Rate Limit) natively via Wasmtime
@@ -200,7 +214,7 @@ async fn forward_request(
         Err(e) => error!("Wasm Filter execution failed: {}", e),
     }
 
-    let _cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
+    let cost = if let Some(ai_meta) = extract_ai_metadata(&req) {
         info!(
             "AI Gateway payload detected. Model: {}, Tokens: {}",
             ai_meta.model, ai_meta.estimated_tokens
@@ -209,6 +223,29 @@ async fn forward_request(
     } else {
         1 // Standard request cost
     };
+
+    let key = format!("ip:{}", client_addr.ip());
+    let limit_res = rate_store
+        .check_rate_limit(&key, 1000, std::time::Duration::from_secs(60), cost)
+        .await;
+
+    match limit_res {
+        Ok(res) if !res.allowed => {
+            tracing::warn!("Rate limit exceeded for IP {}", client_addr.ip());
+            let response = Response::builder()
+                .status(hyper::StatusCode::TOO_MANY_REQUESTS)
+                .header("X-RateLimit-Remaining", "0")
+                .header("X-RateLimit-Reset", res.reset_after.as_millis().to_string())
+                .body(Full::new(Bytes::from("Rate limit exceeded\n")).map_err(|never| match never {}).boxed())
+                .unwrap();
+            return Ok(response);
+        }
+        Err(e) => {
+            tracing::error!("Rate limiter error: {}", e);
+            // fail-open
+        }
+        _ => {}
+    }
 
     // 1. Find the computationally optimal backend using Peak EWMA
     let upstream_backend = select_best_backend(&routing_table);
@@ -310,7 +347,7 @@ async fn forward_request(
         counter!("vortex_requests_errors_total").increment(1);
     }
 
-    Ok(res)
+    Ok(res.map(|b| b.map_err(|e| e).boxed()))
 }
 
 #[cfg(test)]
