@@ -73,13 +73,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let tls_acceptor = TlsAcceptor::from(tls_config);
 
     #[cfg(target_os = "linux")]
-    let _xdp_limiter = {
+    let xdp_limiter: Option<Arc<dyn vortex_ebpf::XdpRateLimiter>> = {
         let bpf_path = "vortex-ebpf/bpf/xdp_drop.o";
         if let Ok(bpf_code) = std::fs::read(bpf_path) {
             match vortex_ebpf::linux::LinuxXdpLimiter::new("eth0", &bpf_code) {
                 Ok(limiter) => {
                     tracing::info!("Successfully loaded eBPF XDP rate limiter on eth0");
-                    Some(Arc::new(limiter))
+                    Some(Arc::new(limiter) as Arc<dyn vortex_ebpf::XdpRateLimiter>)
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load eBPF XDP rate limiter: {}", e);
@@ -94,6 +94,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+
+    #[cfg(not(target_os = "linux"))]
+    let xdp_limiter: Option<Arc<dyn vortex_ebpf::XdpRateLimiter>> = None;
 
     // Prepare mock backends for Phase 2 implementation
     let backends = vec![
@@ -174,6 +177,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         wasm_engine,
         active_connections,
         rate_store,
+        xdp_limiter,
     )
     .await
     {
