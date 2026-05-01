@@ -21,9 +21,9 @@ use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use vortex_core::domain::ai_gateway::AiMetadata;
 use vortex_core::domain::rate_limit::RateStore;
+use crate::ban_manager::BanManager;
 use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::load_balancer::selector::select_best_backend;
-use vortex_ebpf::XdpRateLimiter;
 use vortex_filters::wasm_engine::WasmEngine;
 
 struct HeaderExtractor<'a>(&'a hyper::http::HeaderMap);
@@ -79,7 +79,7 @@ pub async fn start_server(
     wasm_engine: Arc<WasmEngine>,
     active_connections: Arc<std::sync::atomic::AtomicUsize>,
     rate_store: Arc<dyn RateStore>,
-    xdp_limiter: Option<Arc<dyn XdpRateLimiter>>,
+    ban_manager: Arc<BanManager>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
@@ -91,7 +91,7 @@ pub async fn start_server(
         let wasm_engine = wasm_engine.clone();
         let active_connections_clone = active_connections.clone();
         let rate_store_clone = rate_store.clone();
-        let xdp_limiter_clone = xdp_limiter.clone();
+        let ban_manager_clone = ban_manager.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
@@ -106,7 +106,7 @@ pub async fn start_server(
                         let pool_request = connection_pool.clone();
                         let wasm_request = wasm_engine.clone();
                         let rate_store_req = rate_store_clone.clone();
-                        let xdp_limiter_req = xdp_limiter_clone.clone();
+                        let ban_manager_req = ban_manager_clone.clone();
                         if let Err(err) = http1::Builder::new()
                             .serve_connection(
                                 io,
@@ -130,7 +130,7 @@ pub async fn start_server(
                                         pool_request.clone(),
                                         wasm_request.clone(),
                                         rate_store_req.clone(),
-                                        xdp_limiter_req.clone(),
+                                        ban_manager_req.clone(),
                                     )
                                     .instrument(span)
                                 }),
@@ -151,7 +151,7 @@ pub async fn start_server(
             let wasm_request = wasm_engine.clone();
             let active_connections_clone = active_connections.clone();
             let rate_store_req = rate_store_clone.clone();
-            let xdp_limiter_req = xdp_limiter_clone.clone();
+            let ban_manager_req = ban_manager_clone.clone();
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(active_connections_clone.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -178,7 +178,7 @@ pub async fn start_server(
                                 pool_request.clone(),
                                 wasm_request.clone(),
                                 rate_store_req.clone(),
-                                xdp_limiter_req.clone(),
+                                ban_manager_req.clone(),
                             )
                             .instrument(span)
                         }),
@@ -200,7 +200,7 @@ async fn forward_request(
     connection_pool: ConnectionPool,
     wasm_engine: Arc<WasmEngine>,
     rate_store: Arc<dyn RateStore>,
-    xdp_limiter: Option<Arc<dyn XdpRateLimiter>>,
+    ban_manager: Arc<BanManager>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, BoxError> {
     info!("Processing request in pipeline");
 
@@ -241,13 +241,7 @@ async fn forward_request(
         Ok(res) if !res.allowed => {
             tracing::warn!("Rate limit exceeded for IP {}", client_addr.ip());
             
-            if let Some(limiter) = &xdp_limiter {
-                if let Err(e) = limiter.block_ip(client_addr.ip()) {
-                    tracing::error!("Failed to kernel-ban IP {}: {}", client_addr.ip(), e);
-                } else {
-                    tracing::warn!("IP {} successfully banished to the kernel shadow realm (eBPF XDP)", client_addr.ip());
-                }
-            }
+            ban_manager.ban_ip(client_addr.ip(), std::time::Duration::from_secs(300));
 
             let response = Response::builder()
                 .status(hyper::StatusCode::TOO_MANY_REQUESTS)
