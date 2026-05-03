@@ -46,9 +46,9 @@ impl BanManager {
             let mut interval = tokio::time::interval(tick_rate);
             loop {
                 interval.tick().await;
-                
+
                 let now = Instant::now();
-                
+
                 self.banned_ips.retain(|ip, expiration| {
                     if *expiration <= now {
                         if let Some(limiter) = &self.limiter {

@@ -4,9 +4,9 @@
 
 #![deny(missing_docs)]
 
+pub mod ban_manager;
 mod connection_pool;
 mod health_check;
-pub mod ban_manager;
 pub mod metrics_ext;
 mod quic_server;
 mod server;
@@ -170,7 +170,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     )) as Arc<dyn vortex_core::domain::rate_limit::RateStore>;
 
     let ban_manager = Arc::new(ban_manager::BanManager::new(xdp_limiter));
-    ban_manager.clone().spawn_sweeper(std::time::Duration::from_secs(5));
+    ban_manager
+        .clone()
+        .spawn_sweeper(std::time::Duration::from_secs(5));
 
     // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
     if let Err(e) = server::start_server(

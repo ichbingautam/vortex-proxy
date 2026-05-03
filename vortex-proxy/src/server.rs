@@ -1,5 +1,6 @@
 //! Server module for handling incoming connections and HTTP parsing.
 
+use crate::ban_manager::BanManager;
 use crate::connection_pool::pool::ConnectionPool;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
@@ -21,7 +22,6 @@ use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use vortex_core::domain::ai_gateway::AiMetadata;
 use vortex_core::domain::rate_limit::RateStore;
-use crate::ban_manager::BanManager;
 use vortex_core::domain::routing::SharedRoutingTable;
 use vortex_core::load_balancer::selector::select_best_backend;
 use vortex_filters::wasm_engine::WasmEngine;
@@ -240,7 +240,7 @@ async fn forward_request(
     match limit_res {
         Ok(res) if !res.allowed => {
             tracing::warn!("Rate limit exceeded for IP {}", client_addr.ip());
-            
+
             ban_manager.ban_ip(client_addr.ip(), std::time::Duration::from_secs(300));
 
             let response = Response::builder()
