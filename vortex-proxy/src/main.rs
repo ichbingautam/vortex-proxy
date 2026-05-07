@@ -4,6 +4,7 @@
 
 #![deny(missing_docs)]
 
+/// eBPF Ban Management and background garbage collection.
 pub mod ban_manager;
 mod connection_pool;
 mod health_check;
@@ -117,14 +118,25 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let active_connections = Arc::new(AtomicUsize::new(0));
 
+    let default_wat_filter = r#"
+        (module
+            (func (export "execute") (result i32)
+                i32.const 200
+            )
+        )
+    "#;
+    let active_wasm_payload = Arc::new(std::sync::RwLock::new(default_wat_filter.as_bytes().to_vec()));
+
     // Spawn the Control Plane API on a Unix Domain Socket
     let admin_routing_table = routing_table.clone();
     let admin_active_connections = active_connections.clone();
+    let admin_active_wasm_payload = active_wasm_payload.clone();
     tokio::spawn(async move {
         if let Err(e) = vortex_admin::server::start_admin_server(
             "/tmp/vortex_admin.sock",
             admin_routing_table,
             admin_active_connections,
+            admin_active_wasm_payload,
         )
         .await
         {
@@ -184,6 +196,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         active_connections,
         rate_store,
         ban_manager,
+        active_wasm_payload,
     )
     .await
     {

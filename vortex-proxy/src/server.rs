@@ -80,6 +80,7 @@ pub async fn start_server(
     active_connections: Arc<std::sync::atomic::AtomicUsize>,
     rate_store: Arc<dyn RateStore>,
     ban_manager: Arc<BanManager>,
+    active_wasm_payload: Arc<std::sync::RwLock<Vec<u8>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
@@ -92,6 +93,7 @@ pub async fn start_server(
         let active_connections_clone = active_connections.clone();
         let rate_store_clone = rate_store.clone();
         let ban_manager_clone = ban_manager.clone();
+        let wasm_payload_clone = active_wasm_payload.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
@@ -107,6 +109,7 @@ pub async fn start_server(
                         let wasm_request = wasm_engine.clone();
                         let rate_store_req = rate_store_clone.clone();
                         let ban_manager_req = ban_manager_clone.clone();
+                        let wasm_payload_req = wasm_payload_clone.clone();
                         if let Err(err) = http1::Builder::new()
                             .serve_connection(
                                 io,
@@ -131,6 +134,7 @@ pub async fn start_server(
                                         wasm_request.clone(),
                                         rate_store_req.clone(),
                                         ban_manager_req.clone(),
+                                        wasm_payload_req.clone(),
                                     )
                                     .instrument(span)
                                 }),
@@ -152,6 +156,7 @@ pub async fn start_server(
             let active_connections_clone = active_connections.clone();
             let rate_store_req = rate_store_clone.clone();
             let ban_manager_req = ban_manager_clone.clone();
+            let wasm_payload_req = wasm_payload_clone.clone();
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(active_connections_clone.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -179,6 +184,7 @@ pub async fn start_server(
                                 wasm_request.clone(),
                                 rate_store_req.clone(),
                                 ban_manager_req.clone(),
+                                wasm_payload_req.clone(),
                             )
                             .instrument(span)
                         }),
@@ -201,20 +207,17 @@ async fn forward_request(
     wasm_engine: Arc<WasmEngine>,
     rate_store: Arc<dyn RateStore>,
     ban_manager: Arc<BanManager>,
+    active_wasm_payload: Arc<std::sync::RwLock<Vec<u8>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, BoxError> {
     info!("Processing request in pipeline");
 
     // 0. Execute Wasm L7 Filter (e.g., Auth, Rate Limit) natively via Wasmtime
-    // For MVP USP Demonstration, we run a static WASM payload yielding an ACCEPT (200).
-    // In production, `vortex_admin` dynamically swaps this bytecode at runtime!
-    let wat_filter = r#"
-        (module
-            (func (export "execute") (result i32)
-                i32.const 200
-            )
-        )
-    "#;
-    match wasm_engine.execute_filter(wat_filter.as_bytes()) {
+    // The filter bytecode is dynamically hot-swappable via the `vortex_admin` control plane.
+    let wasm_bytes = {
+        active_wasm_payload.read().unwrap().clone()
+    };
+    
+    match wasm_engine.execute_filter(&wasm_bytes) {
         Ok(code) => debug!(
             "Wasm Filter executed natively across FFI boundary. Exit Code: {}",
             code

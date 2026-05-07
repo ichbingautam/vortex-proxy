@@ -4,6 +4,7 @@ package vortex.admin;
 service AdminService {
     rpc ReloadConfig (ReloadConfigRequest) returns (ReloadConfigResponse);
     rpc GetStats (GetStatsRequest) returns (GetStatsResponse);
+    rpc UpdateWasmPlugin (UpdateWasmRequest) returns (UpdateWasmResponse);
 }
 
 message ReloadConfigRequest {
@@ -19,4 +20,13 @@ message GetStatsRequest {}
 
 message GetStatsResponse {
     uint32 active_connections = 1;
+}
+
+message UpdateWasmRequest {
+    bytes wasm_binary = 1;
+}
+
+message UpdateWasmResponse {
+    bool success = 1;
+    string message = 2;
 }
