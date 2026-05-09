@@ -213,10 +213,8 @@ async fn forward_request(
 
     // 0. Execute Wasm L7 Filter (e.g., Auth, Rate Limit) natively via Wasmtime
     // The filter bytecode is dynamically hot-swappable via the `vortex_admin` control plane.
-    let wasm_bytes = {
-        active_wasm_payload.read().unwrap().clone()
-    };
-    
+    let wasm_bytes = { active_wasm_payload.read().unwrap().clone() };
+
     match wasm_engine.execute_filter(&wasm_bytes) {
         Ok(code) => debug!(
             "Wasm Filter executed natively across FFI boundary. Exit Code: {}",

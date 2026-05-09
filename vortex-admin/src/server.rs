@@ -80,7 +80,7 @@ impl AdminService for AdminServerImpl {
         request: Request<UpdateWasmRequest>,
     ) -> Result<Response<UpdateWasmResponse>, Status> {
         let req = request.into_inner();
-        
+
         let new_size = req.wasm_binary.len();
         if new_size == 0 {
             return Ok(Response::new(UpdateWasmResponse {
@@ -94,12 +94,15 @@ impl AdminService for AdminServerImpl {
                 *payload = req.wasm_binary;
                 Ok(Response::new(UpdateWasmResponse {
                     success: true,
-                    message: format!("Successfully hot-swapped Wasm plugin. New size: {} bytes.", new_size),
+                    message: format!(
+                        "Successfully hot-swapped Wasm plugin. New size: {} bytes.",
+                        new_size
+                    ),
                 }))
             }
-            Err(_) => {
-                Err(Status::internal("Failed to acquire write lock on Wasm registry"))
-            }
+            Err(_) => Err(Status::internal(
+                "Failed to acquire write lock on Wasm registry",
+            )),
         }
     }
 }
@@ -117,7 +120,8 @@ pub async fn start_admin_server(
     let uds = UnixListener::bind(socket_path)?;
     let stream = UnixListenerStream::new(uds);
 
-    let admin_service = AdminServerImpl::new(routing_table, active_connections, active_wasm_payload);
+    let admin_service =
+        AdminServerImpl::new(routing_table, active_connections, active_wasm_payload);
 
     println!("Starting Admin Unix Socket API at {}", socket_path);
 

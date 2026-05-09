@@ -125,7 +125,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             )
         )
     "#;
-    let active_wasm_payload = Arc::new(std::sync::RwLock::new(default_wat_filter.as_bytes().to_vec()));
+    let active_wasm_payload = Arc::new(std::sync::RwLock::new(
+        default_wat_filter.as_bytes().to_vec(),
+    ));
 
     // Spawn the Control Plane API on a Unix Domain Socket
     let admin_routing_table = routing_table.clone();
