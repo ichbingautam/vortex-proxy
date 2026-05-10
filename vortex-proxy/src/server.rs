@@ -71,6 +71,7 @@ impl Drop for ActiveConnGuard {
 }
 
 /// Starts the proxy server on the given address.
+#[allow(clippy::too_many_arguments)]
 pub async fn start_server(
     addr: SocketAddr,
     tls_acceptor: Option<TlsAcceptor>,
@@ -199,6 +200,7 @@ pub async fn start_server(
 }
 
 /// Handles incoming HTTP requests and proxies them to a healthy backend.
+#[allow(clippy::too_many_arguments)]
 async fn forward_request(
     mut req: Request<Incoming>,
     client_addr: SocketAddr,
