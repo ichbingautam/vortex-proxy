@@ -71,73 +71,68 @@ impl Drop for ActiveConnGuard {
 }
 
 /// Starts the proxy server on the given address.
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone)]
+pub struct ServerContext {
+    pub routing_table: SharedRoutingTable,
+    pub connection_pool: ConnectionPool,
+    pub wasm_engine: Arc<WasmEngine>,
+    pub active_connections: Arc<std::sync::atomic::AtomicUsize>,
+    pub rate_store: Arc<dyn RateStore>,
+    pub ban_manager: Arc<BanManager>,
+    pub active_wasm_payload: Arc<std::sync::RwLock<Vec<u8>>>,
+}
+
+/// Starts the proxy server on the given address.
 pub async fn start_server(
     addr: SocketAddr,
     tls_acceptor: Option<TlsAcceptor>,
-    routing_table: SharedRoutingTable,
-    connection_pool: ConnectionPool,
-    wasm_engine: Arc<WasmEngine>,
-    active_connections: Arc<std::sync::atomic::AtomicUsize>,
-    rate_store: Arc<dyn RateStore>,
-    ban_manager: Arc<BanManager>,
-    active_wasm_payload: Arc<std::sync::RwLock<Vec<u8>>>,
+    ctx: ServerContext,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     info!("Listening on {}", addr);
 
     loop {
-        let (stream, peer_addr) = listener.accept().await?;
-        let routing_table = routing_table.clone();
-        let connection_pool = connection_pool.clone();
-        let wasm_engine = wasm_engine.clone();
-        let active_connections_clone = active_connections.clone();
-        let rate_store_clone = rate_store.clone();
-        let ban_manager_clone = ban_manager.clone();
-        let wasm_payload_clone = active_wasm_payload.clone();
+        let (stream, client_addr) = tokio::select! {
+            res = listener.accept() => {
+                match res {
+                    Ok(accepted) => accepted,
+                    Err(e) => {
+                        error!("Accept error: {}", e);
+                        continue;
+                    }
+                }
+            }
+            _ = shutdown_rx.recv() => {
+                info!("Shutdown signal received. Stopping TCP listener on {}", addr);
+                break;
+            }
+        };
+
+        let ctx_clone = ctx.clone();
 
         if let Some(acceptor) = &tls_acceptor {
             let acceptor = acceptor.clone();
             tokio::task::spawn(async move {
-                let _guard = ActiveConnGuard(active_connections_clone.clone());
+                let _guard = ActiveConnGuard(ctx_clone.active_connections.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let span = tracing::info_span!("tls_connection", client_ip = %client_addr.ip());
 
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
-                        let io = TokioIo::new(tls_stream);
-                        let routers_request = routing_table.clone();
-                        let pool_request = connection_pool.clone();
-                        let wasm_request = wasm_engine.clone();
-                        let rate_store_req = rate_store_clone.clone();
-                        let ban_manager_req = ban_manager_clone.clone();
-                        let wasm_payload_req = wasm_payload_clone.clone();
+                        let io = hyper_util::rt::TokioIo::new(tls_stream);
+                        let ctx_req = ctx_clone.clone();
+
                         if let Err(err) = http1::Builder::new()
                             .serve_connection(
                                 io,
                                 service_fn(move |req| {
-                                    // Extract W3C Context at the edge
-                                    let parent_cx = global::get_text_map_propagator(|prop| {
-                                        prop.extract(&HeaderExtractor(req.headers()))
-                                    });
-
-                                    let span = tracing::info_span!(
-                                        "proxy_request",
-                                        method = %req.method(),
-                                        uri = %req.uri(),
-                                    );
-                                    span.set_parent(parent_cx);
-
                                     forward_request(
                                         req,
-                                        peer_addr,
-                                        routers_request.clone(),
-                                        pool_request.clone(),
-                                        wasm_request.clone(),
-                                        rate_store_req.clone(),
-                                        ban_manager_req.clone(),
-                                        wasm_payload_req.clone(),
+                                        client_addr,
+                                        ctx_req.clone(),
                                     )
-                                    .instrument(span)
+                                    .instrument(span.clone())
                                 }),
                             )
                             .await
@@ -150,44 +145,24 @@ pub async fn start_server(
             });
         } else {
             // Unencrypted fallback
-            let io = TokioIo::new(stream);
-            let routers_request = routing_table.clone();
-            let pool_request = connection_pool.clone();
-            let wasm_request = wasm_engine.clone();
-            let active_connections_clone = active_connections.clone();
-            let rate_store_req = rate_store_clone.clone();
-            let ban_manager_req = ban_manager_clone.clone();
-            let wasm_payload_req = wasm_payload_clone.clone();
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let ctx_req = ctx_clone.clone();
+            
             tokio::task::spawn(async move {
-                let _guard = ActiveConnGuard(active_connections_clone.clone());
+                let _guard = ActiveConnGuard(ctx_req.active_connections.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let span = tracing::info_span!("tcp_connection", client_ip = %client_addr.ip());
 
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(
                         io,
                         service_fn(move |req| {
-                            let parent_cx = global::get_text_map_propagator(|prop| {
-                                prop.extract(&HeaderExtractor(req.headers()))
-                            });
-
-                            let span = tracing::info_span!(
-                                "proxy_request",
-                                method = %req.method(),
-                                uri = %req.uri(),
-                            );
-                            span.set_parent(parent_cx);
-
                             forward_request(
                                 req,
-                                peer_addr,
-                                routers_request.clone(),
-                                pool_request.clone(),
-                                wasm_request.clone(),
-                                rate_store_req.clone(),
-                                ban_manager_req.clone(),
-                                wasm_payload_req.clone(),
+                                client_addr,
+                                ctx_req.clone(),
                             )
-                            .instrument(span)
+                            .instrument(span.clone())
                         }),
                     )
                     .await
@@ -200,18 +175,22 @@ pub async fn start_server(
 }
 
 /// Handles incoming HTTP requests and proxies them to a healthy backend.
-#[allow(clippy::too_many_arguments)]
 async fn forward_request(
     mut req: Request<Incoming>,
     client_addr: SocketAddr,
-    routing_table: SharedRoutingTable,
-    connection_pool: ConnectionPool,
-    wasm_engine: Arc<WasmEngine>,
-    rate_store: Arc<dyn RateStore>,
-    ban_manager: Arc<BanManager>,
-    active_wasm_payload: Arc<std::sync::RwLock<Vec<u8>>>,
+    ctx: ServerContext,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, BoxError> {
     info!("Processing request in pipeline");
+
+    let ServerContext {
+        routing_table,
+        connection_pool,
+        wasm_engine,
+        rate_store,
+        ban_manager,
+        active_wasm_payload,
+        ..
+    } = ctx;
 
     // 0. Execute Wasm L7 Filter (e.g., Auth, Rate Limit) natively via Wasmtime
     // The filter bytecode is dynamically hot-swappable via the `vortex_admin` control plane.
