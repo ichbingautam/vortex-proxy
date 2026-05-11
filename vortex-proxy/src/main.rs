@@ -188,10 +188,18 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .spawn_sweeper(std::time::Duration::from_secs(5));
 
-    // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
-    if let Err(e) = server::start_server(
-        addr,
-        Some(tls_acceptor),
+    // Setup Graceful Shutdown channel
+    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+    
+    // Spawn Ctrl+C handler
+    tokio::spawn(async move {
+        if let Ok(_) = tokio::signal::ctrl_c().await {
+            tracing::info!("Ctrl+C received! Initiating graceful shutdown...");
+            let _ = shutdown_tx.send(());
+        }
+    });
+
+    let ctx = server::ServerContext {
         routing_table,
         connection_pool,
         wasm_engine,
@@ -199,11 +207,22 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         rate_store,
         ban_manager,
         active_wasm_payload,
+    };
+
+    // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
+    if let Err(e) = server::start_server(
+        addr,
+        Some(tls_acceptor),
+        ctx,
+        shutdown_rx,
     )
     .await
     {
         eprintln!("Server failed: {}", e);
     }
+
+    // Give remaining active tasks a brief moment to drain before process exits
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     println!("Shutting down gracefully.");
     Ok(())

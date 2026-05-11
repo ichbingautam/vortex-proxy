@@ -127,12 +127,24 @@ pub async fn start_server(
                             .serve_connection(
                                 io,
                                 service_fn(move |req| {
+                                    // Extract W3C Context at the edge
+                                    let parent_cx = global::get_text_map_propagator(|prop| {
+                                        prop.extract(&HeaderExtractor(req.headers()))
+                                    });
+
+                                    let proxy_span = tracing::info_span!(
+                                        "proxy_request",
+                                        method = %req.method(),
+                                        uri = %req.uri(),
+                                    );
+                                    proxy_span.set_parent(parent_cx);
+
                                     forward_request(
                                         req,
                                         client_addr,
                                         ctx_req.clone(),
                                     )
-                                    .instrument(span.clone())
+                                    .instrument(proxy_span)
                                 }),
                             )
                             .await
@@ -157,12 +169,24 @@ pub async fn start_server(
                     .serve_connection(
                         io,
                         service_fn(move |req| {
+                            // Extract W3C Context at the edge
+                            let parent_cx = global::get_text_map_propagator(|prop| {
+                                prop.extract(&HeaderExtractor(req.headers()))
+                            });
+
+                            let proxy_span = tracing::info_span!(
+                                "proxy_request",
+                                method = %req.method(),
+                                uri = %req.uri(),
+                            );
+                            proxy_span.set_parent(parent_cx);
+
                             forward_request(
                                 req,
                                 client_addr,
                                 ctx_req.clone(),
                             )
-                            .instrument(span.clone())
+                            .instrument(proxy_span)
                         }),
                     )
                     .await
