@@ -1,5 +1,6 @@
 //! Backend server models.
 
+use crate::domain::circuit_breaker::CircuitBreaker;
 use crate::load_balancer::ewma::PeakEwma;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +21,8 @@ pub struct Backend {
     healthy: AtomicBool,
     /// The Peak EWMA tracker for this specific backend
     pub ewma: PeakEwma,
+    /// Tracks consecutive failures and trips the circuit if needed
+    pub circuit_breaker: CircuitBreaker,
     /// The AI models this backend is capable of serving
     pub ai_models: Vec<String>,
 }
@@ -35,6 +38,8 @@ impl Backend {
             // Initialize EWMA with 50.0ms baseline and 0.5 balanced decay
             ewma: PeakEwma::new(50.0, 0.5),
 
+            circuit_breaker: CircuitBreaker::new(),
+
             // Base unconfigured backend assumes standard proxy usage (no AI models)
             ai_models: vec![],
         }
@@ -48,6 +53,7 @@ impl Backend {
             addr,
             healthy: AtomicBool::new(true),
             ewma: PeakEwma::new(50.0, 0.5),
+            circuit_breaker: CircuitBreaker::new(),
             ai_models: models,
         }
     }

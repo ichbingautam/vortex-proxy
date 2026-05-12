@@ -275,7 +275,18 @@ async fn forward_request(
         Some(backend) => (backend.addr, backend.clone()),
         None => {
             error!("No healthy backends available!");
-            return Err(Box::from("No healthy backends available"));
+            let response = Response::builder()
+                .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                .header("Content-Type", "application/json")
+                .body(
+                    Full::new(Bytes::from(
+                        r#"{"error": "no_healthy_upstream", "message": "All backend servers are currently unavailable."}"#,
+                    ))
+                    .map_err(|never| match never {})
+                    .boxed(),
+                )
+                .unwrap();
+            return Ok(response);
         }
     };
 
@@ -302,7 +313,19 @@ async fn forward_request(
                 Ok(s) => s,
                 Err(e) => {
                     error!("Failed to connect to backend {}: {}", upstream_addr, e);
-                    return Err(Box::new(e));
+                    ewma_node.circuit_breaker.record_failure();
+                    let response = Response::builder()
+                        .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                        .header("Content-Type", "application/json")
+                        .body(
+                            Full::new(Bytes::from(
+                                r#"{"error": "upstream_connection_failed", "message": "Failed to establish a connection to the upstream server."}"#,
+                            ))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                        )
+                        .unwrap();
+                    return Ok(response);
                 }
             };
 
@@ -313,7 +336,19 @@ async fn forward_request(
                 Ok(handshake) => handshake,
                 Err(e) => {
                     error!("Failed HTTP handshake with backend: {}", e);
-                    return Err(Box::new(e));
+                    ewma_node.circuit_breaker.record_failure();
+                    let response = Response::builder()
+                        .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                        .header("Content-Type", "application/json")
+                        .body(
+                            Full::new(Bytes::from(
+                                r#"{"error": "upstream_handshake_failed", "message": "Failed to negotiate HTTP with the upstream server."}"#,
+                            ))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                        )
+                        .unwrap();
+                    return Ok(response);
                 }
             };
 
@@ -349,7 +384,28 @@ async fn forward_request(
 
     let req_method = req.method().to_string();
 
-    let res = sender.send_request(req).await?;
+    let res = match sender.send_request(req).await {
+        Ok(res) => {
+            ewma_node.circuit_breaker.record_success();
+            res
+        }
+        Err(e) => {
+            error!("Failed to proxy request: {}", e);
+            ewma_node.circuit_breaker.record_failure();
+            let response = Response::builder()
+                .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                .header("Content-Type", "application/json")
+                .body(
+                    Full::new(Bytes::from(
+                        r#"{"error": "upstream_request_failed", "message": "Failed to proxy the request to the upstream server."}"#,
+                    ))
+                    .map_err(|never| match never {})
+                    .boxed(),
+                )
+                .unwrap();
+            return Ok(response);
+        }
+    };
 
     // Return the sender cleanly to the Lock-Free pool for reuse by another request
     connection_pool.push(upstream_addr, sender);

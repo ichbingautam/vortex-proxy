@@ -8,3 +8,6 @@ pub mod rate_limit;
 
 /// AI Gateway utilities.
 pub mod ai_gateway;
+
+/// Circuit Breaker resilience patterns.
+pub mod circuit_breaker;
