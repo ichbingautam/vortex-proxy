@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vortex-proxy
+  labels:
+    app: vortex-proxy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: vortex-proxy
+  template:
+    metadata:
+      labels:
+        app: vortex-proxy
+    spec:
+      containers:
+      - name: proxy
+        image: vortex-proxy:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8443
+          name: https
+        - containerPort: 50051
+          name: grpc-admin
+        env:
+        - name: REDIS_URL
+          value: "redis://redis-master:6379/"
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "1Gi"
+        # We need CAP_NET_ADMIN for eBPF/XDP integration to work correctly
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vortex-proxy-svc
+  labels:
+    app: vortex-proxy
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 443
+    targetPort: 8443
+    name: https
+  - port: 50051
+    targetPort: 50051
+    name: grpc-admin
+  selector:
+    app: vortex-proxy
