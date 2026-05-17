@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: vortex-proxy
+  labels:
+    app: vortex-proxy
+spec:
+  replicas: 5
+  strategy:
+    canary:
+      # Progressive delivery: route 20% of traffic to the new version, then wait.
+      steps:
+      - setWeight: 20
+      - pause: {duration: 1m} # Let it bake for 1 minute
+      - setWeight: 50
+      - pause: {} # Pause indefinitely until an engineer manually promotes it
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: vortex-proxy
+  template:
+    metadata:
+      labels:
+        app: vortex-proxy
+    spec:
+      containers:
+      - name: proxy
+        image: vortex-proxy:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8443
+          name: https
+        - containerPort: 50051
+          name: grpc-admin
+        env:
+        - name: REDIS_URL
+          value: "redis://redis-master:6379/"
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "1Gi"
+        # We need CAP_NET_ADMIN for eBPF/XDP integration to work correctly
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
