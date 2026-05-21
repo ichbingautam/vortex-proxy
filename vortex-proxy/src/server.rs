@@ -196,6 +196,8 @@ pub async fn start_server(
             });
         }
     }
+
+    Ok(())
 }
 
 /// Handles incoming HTTP requests and proxies them to a healthy backend.
