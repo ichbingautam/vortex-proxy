@@ -40,12 +40,23 @@ Trace aggregation limits datapath speeds if implemented naively.
 - Span processing leverages an asynchronous, bounded `mpsc::channel` paired with the `opentelemetry-otlp` protocol to stream high-resolution vectors without throttling latency.
 - Features Prometheus histograms natively accessible on a decoupled loopback listener (port `9091`) predicting the edge listener.
 
-### 6. Operational Robustness & Performance Hardening
+### 6. eBPF / XDP Kernel-Level Traffic Mitigation
+To protect the backend from volumetric DDoS attacks, Vortex integrates an eBPF/XDP packet filter.
+- Drops abusive packets directly at the network interface card (NIC) layer before they even reach the Linux network stack or the Rust application layer.
+- Instantly mitigates L3/L4 attacks at line-rate.
 
+### 7. Lock-Free Circuit Breakers
+- Incorporates robust `CircuitBreaker` states (`Closed`, `Open`, `HalfOpen`) into the core domain.
+- Automatically isolates failing backends from the routing table and returns structured `503 JSON` errors, preventing cascading timeouts across the system.
+
+### 8. Operational Robustness & Performance Hardening
+
+- **Wasmtime Pooling**: Integrates the `PoolingAllocationConfig` to pre-warm up to 1,000 Wasm sandboxes, eliminating JIT memory fragmentation.
 - **Memory Allocation**: Replaced system malloc with `jemalloc` (`jemallocator`) universally to eliminate memory fragmentation under 100k+ RPS concurrent loads.
 - **CPU Pinning**: Integrated `core_affinity` to strictly pin Tokio worker threads to specific physical CPU pipelines, mitigating L1/L2 cache-miss latency penalties during context switches.
 - **HTTP/3 (QUIC) Ready**: Initialized a pure `quinn` UDP listener side-by-side with TLS offloading, paving the way for advanced multiplexed QUIC streams at the edge.
-- **Zero-Downtime Config Swaps**: Leverages `arc-swap` for atomic routing table updates via an internal gRPC administrative API without dropping active connections.
+- **Graceful Shutdown**: Employs `tokio::sync::broadcast` for zero-downtime listener draining on SIGINT.
+- **Kubernetes Native**: Fully equipped with multi-stage Docker builds, `HorizontalPodAutoscaler`, and Argo Rollouts Canary progressive delivery manifests.
 
 ## Request Flow
 
