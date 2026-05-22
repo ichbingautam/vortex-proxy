@@ -116,7 +116,7 @@ pub async fn start_server(
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(ctx_clone.active_connections.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let span = tracing::info_span!("tls_connection", client_ip = %client_addr.ip());
+                let _span = tracing::info_span!("tls_connection", client_ip = %client_addr.ip());
 
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
@@ -163,7 +163,7 @@ pub async fn start_server(
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(ctx_req.active_connections.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let span = tracing::info_span!("tcp_connection", client_ip = %client_addr.ip());
+                let _span = tracing::info_span!("tcp_connection", client_ip = %client_addr.ip());
 
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(

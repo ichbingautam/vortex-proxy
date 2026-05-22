@@ -193,7 +193,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Spawn Ctrl+C handler
     tokio::spawn(async move {
-        if let Ok(_) = tokio::signal::ctrl_c().await {
+        if tokio::signal::ctrl_c().await.is_ok() {
             tracing::info!("Ctrl+C received! Initiating graceful shutdown...");
             let _ = shutdown_tx.send(());
         }
