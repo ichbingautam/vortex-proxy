@@ -151,7 +151,53 @@ message ReloadConfigResponse {
 }
 ```
 
+**Configuration Payload JSON Schema (`json_config_payload`)**:
+When sending a `ReloadConfigRequest`, the `json_config_payload` expects a serialized JSON string containing the new routing backend topology and (optionally) a new Wasm filter payload.
+
+```json
+{
+  "backends": [
+    {
+      "id": 1,
+      "address": "127.0.0.1:8080",
+      "ai_models": ["gpt-4", "claude-3"]
+    },
+    {
+      "id": 2,
+      "address": "127.0.0.1:8081",
+      "ai_models": ["llama-3"]
+    }
+  ],
+  "wasm_filter_base64": "AGFzbQEAAAA..." 
+}
+```
+
 State swaps are executed globally using the `arc-swap` crate, ensuring that any active TCP streams maintain `Arc` references to their origin routing graphs indefinitely until disconnected, achieving true **zero-downtime draining**.
+
+### 4. Data Plane API Responses (Client-Facing)
+
+VortexProxy interacts with downstream clients through standard HTTP semantics, intercepting abusive or failing traffic natively.
+
+- **`429 Too Many Requests`**:
+  Triggered when the distributed GCRA Redis token bucket is exhausted for a specific client IP or authorization token.
+  ```json
+  {
+    "error": "Rate limit exceeded",
+    "retry_after_ms": 1500
+  }
+  ```
+
+- **`503 Service Unavailable`**:
+  Triggered when the Peak EWMA router detects that all upstream nodes are unreachable, or when the atomic **Circuit Breaker** flips to the `Open` state after consecutive failures.
+  ```json
+  {
+    "error": "Service Unavailable",
+    "message": "Circuit breaker open or all backend nodes are offline."
+  }
+  ```
+
+- **`403 Forbidden`**:
+  Triggered when the dynamic Wasmtime filter explicitly rejects a request (e.g. invalid Authentication headers or unauthorized JWT tokens) returning a `proxy_pause` ABI code.
 
 ## Project Structure
 
