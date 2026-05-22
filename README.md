@@ -4,6 +4,12 @@
 
 Vortex is a high-performance, programmable L7 proxy built entirely in Rust. Designed around a Hexagonal Architecture (Ports and Adapters) through a pure multi-crate Cargo workspace, it heavily emphasizes zero-overhead abstractions, non-blocking telemetry, and extreme tailorability via WebAssembly.
 
+## 🚀 Why Vortex? (Our USP)
+
+**Vortex is the only API Gateway that natively merges eBPF kernel-level hardware packet drops with WebAssembly (Wasm) edge extensibility and lock-free Peak EWMA routing into a single, memory-safe Rust binary.** 
+
+Unlike Envoy or NGINX which rely on heavy legacy C++ codebases or multiple sidecars to achieve these features, Vortex gives you 10M+ RPS capacity, instant L3/L4 DDoS mitigation, and dynamic Cloudflare-like edge compute natively in a sub-10MB distroless container.
+
 ## Key Features
 
 ### 1. Zero-Copy HTTP Pipeline & Lock-Free Hot Pool
@@ -245,3 +251,19 @@ The project is structured as a Cargo Workspace utilizing Hexagonal Architecture 
    cargo test --workspace
    cargo bench -p vortex-core
    ```
+
+## 🤝 Contributing
+
+We are actively looking for open-source contributors to help push Vortex to the absolute limits of edge computing!
+
+Whether you are a Rust systems expert, an eBPF wizard, or just someone who loves writing WebAssembly plugins, we want you on board. 
+
+### How you can help:
+- **eBPF & XDP**: Expand our kernel-level networking filters to drop specific DDoS attack vectors natively.
+- **Wasm Plugins**: Build and share custom Proxy-WASM plugins (e.g., JWT validators, Rate Limiters) written in Rust, Go, or AssemblyScript.
+- **Protocol Support**: Help us finalize full HTTP/3 (QUIC) and gRPC multiplexing support.
+- **Observability**: Integrate deeper OpenTelemetry tracing metrics and Jaeger dashboards.
+
+Check out our [Issues](https://github.com/ichbingautam/vortex-proxy/issues) tab to find "good first issues", fork the repository, and submit a Pull Request! All code must pass `make lint` and `make test`.
+
+**Join us in building the fastest, safest, and most programmable L7 proxy in the open-source ecosystem!**
