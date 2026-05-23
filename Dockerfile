@@ -16,8 +16,8 @@ COPY vortex-ebpf/Cargo.toml vortex-ebpf/
 COPY vortex-proxy/Cargo.toml vortex-proxy/
 
 # Create dummy source files to cache dependencies
-RUN mkdir -p vortex-core/src vortex-filters/src vortex-admin/src vortex-ebpf/src vortex-proxy/src && \
-    touch vortex-core/src/lib.rs vortex-filters/src/lib.rs vortex-admin/src/lib.rs vortex-ebpf/src/lib.rs && \
+RUN mkdir -p vortex-core/src vortex-core/benches vortex-filters/src vortex-admin/src vortex-ebpf/src vortex-proxy/src && \
+    touch vortex-core/src/lib.rs vortex-core/benches/ewma_benchmark.rs vortex-filters/src/lib.rs vortex-admin/src/lib.rs vortex-ebpf/src/lib.rs && \
     echo 'fn main() {}' > vortex-proxy/src/main.rs
 
 # Build dummy dependencies (this will cache all crates.io dependencies)
