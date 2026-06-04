@@ -139,12 +139,8 @@ pub async fn start_server(
                                     );
                                     proxy_span.set_parent(parent_cx);
 
-                                    forward_request(
-                                        req,
-                                        client_addr,
-                                        ctx_req.clone(),
-                                    )
-                                    .instrument(proxy_span)
+                                    forward_request(req, client_addr, ctx_req.clone())
+                                        .instrument(proxy_span)
                                 }),
                             )
                             .await
@@ -159,7 +155,7 @@ pub async fn start_server(
             // Unencrypted fallback
             let io = hyper_util::rt::TokioIo::new(stream);
             let ctx_req = ctx_clone.clone();
-            
+
             tokio::task::spawn(async move {
                 let _guard = ActiveConnGuard(ctx_req.active_connections.clone());
                 _guard.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -181,12 +177,8 @@ pub async fn start_server(
                             );
                             proxy_span.set_parent(parent_cx);
 
-                            forward_request(
-                                req,
-                                client_addr,
-                                ctx_req.clone(),
-                            )
-                            .instrument(proxy_span)
+                            forward_request(req, client_addr, ctx_req.clone())
+                                .instrument(proxy_span)
                         }),
                     )
                     .await

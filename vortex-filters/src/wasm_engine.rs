@@ -11,10 +11,10 @@ impl Default for WasmEngine {
     fn default() -> Self {
         let mut config = Config::new();
         let mut pooling_config = PoolingAllocationConfig::default();
-        
+
         // Allocate enough for 1000 concurrent WASM sandboxes lock-free
         pooling_config.total_core_instances(1000);
-        
+
         config.allocation_strategy(InstanceAllocationStrategy::Pooling(pooling_config));
 
         Self {

@@ -190,7 +190,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup Graceful Shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
-    
+
     // Spawn Ctrl+C handler
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
@@ -210,14 +210,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Start the server with the TLS Acceptor, routing table, hot pool, and Wasm runtime
-    if let Err(e) = server::start_server(
-        addr,
-        Some(tls_acceptor),
-        ctx,
-        shutdown_rx,
-    )
-    .await
-    {
+    if let Err(e) = server::start_server(addr, Some(tls_acceptor), ctx, shutdown_rx).await {
         eprintln!("Server failed: {}", e);
     }
 
